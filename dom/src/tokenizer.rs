@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
     Data,
@@ -84,12 +85,19 @@ enum State {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attribute {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     EndOfFile,
     Character(char),
     Tag {
         is_start_tag: bool,
         tag_name: String,
+        attributes: Vec<Attribute>,
     },
 }
 
@@ -151,7 +159,7 @@ impl<'input> Tokenizer<'input> {
                         self.switch_to(State::TagOpen);
                     }
                     null!() => {
-                        todo!("This is an unexpected-null-character parse error. Emit the current input character as a character token.")
+                        todo!("This is an unexpected-null-character parse error. Emit the current input character as a character token.");
                     }
                     eof!() => {
                         self.emit_token(Token::EndOfFile);
@@ -175,17 +183,18 @@ impl<'input> Tokenizer<'input> {
                         self.set_current_token(Token::Tag {
                             is_start_tag: true,
                             tag_name: "".to_string(),
+                            attributes: vec![],
                         });
                         self.reconsume_in_state(State::TagName);
                     }
                     Some('?') => {
-                        todo!("This is an unexpected-question-mark-instead-of-tag-name parse error. Create a comment token whose data is the empty string. Reconsume in the bogus comment state.")
+                        todo!("This is an unexpected-question-mark-instead-of-tag-name parse error. Create a comment token whose data is the empty string. Reconsume in the bogus comment state.");
                     }
                     eof!() => {
-                        todo!("This is an eof-before-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token and an end-of-file token.")
+                        todo!("This is an eof-before-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token and an end-of-file token.");
                     }
                     Some(_) => {
-                        todo!("This is an invalid-first-character-of-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token. Reconsume in the data state.")
+                        todo!("This is an invalid-first-character-of-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token. Reconsume in the data state.");
                     }
                 },
                 State::EndTagOpen => {
@@ -194,17 +203,18 @@ impl<'input> Tokenizer<'input> {
                             self.set_current_token(Token::Tag {
                                 is_start_tag: false,
                                 tag_name: "".to_string(),
+                                attributes: vec![],
                             });
                             self.reconsume_in_state(State::TagName);
                         }
                         Some('>') => {
-                            todo!("This is a missing-end-tag-name parse error. Switch to the data state.")
+                            todo!("This is a missing-end-tag-name parse error. Switch to the data state.");
                         }
                         eof!() => {
-                            todo!("This is an eof-before-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token and an end-of-file token.")
+                            todo!("This is an eof-before-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token and an end-of-file token.");
                         }
                         Some(_) => {
-                            todo!("This is an invalid-first-character-of-tag-name parse error. Create a comment token whose data is the empty string. Reconsume in the bogus comment state.")
+                            todo!("This is an invalid-first-character-of-tag-name parse error. Create a comment token whose data is the empty string. Reconsume in the bogus comment state.");
                         }
                     }
                 }
@@ -220,10 +230,10 @@ impl<'input> Tokenizer<'input> {
                         self.emit_current_token();
                     }
                     null!() => {
-                        todo!("This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current tag token's tag name.")
+                        todo!("This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current tag token's tag name.");
                     }
                     eof!() => {
-                        todo!("This is an eof-in-tag parse error. Emit an end-of-file token.")
+                        todo!("This is an eof-in-tag parse error. Emit an end-of-file token.");
                     }
                     Some(anything_else) => {
                         // ASCII upper alpha:
@@ -262,14 +272,103 @@ impl<'input> Tokenizer<'input> {
                     todo!("ScriptDataDoubleEscapedLessThanSign")
                 }
                 State::ScriptDataDoubleEscapeEnd => todo!("ScriptDataDoubleEscapeEnd"),
-                State::BeforeAttributeName => todo!("BeforeAttributeName"),
-                State::AttributeName => todo!("AttributeName"),
+                State::BeforeAttributeName => match self.consume_next_input_character() {
+                    whitespace!() => {}
+                    Some('/') | Some('<') | eof!() => {
+                        self.reconsume_in_state(State::AfterAttributeName);
+                    }
+                    Some('=') => {
+                        todo!("This is an unexpected-equals-sign-before-attribute-name parse error. Start a new attribute in the current tag token. Set that attribute's name to the current input character, and its value to the empty string. Switch to the attribute name state.");
+                    }
+                    Some(_) => {
+                        if let Some(Token::Tag { attributes, .. }) = &mut self.current_token {
+                            attributes.push(Attribute {
+                                name: "".to_string(),
+                                value: "".to_string(),
+                            })
+                        }
+                        self.reconsume_in_state(State::AttributeName);
+                    }
+                },
+                State::AttributeName => match self.consume_next_input_character() {
+                    whitespace!() | Some('/') | Some('>') | eof!() => {
+                        self.reconsume_in_state(State::AfterAttributeName);
+                    }
+                    Some('=') => {
+                        self.switch_to(State::BeforeAttributeValue);
+                    }
+                    null!() => {
+                        todo!("This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's name.");
+                    }
+                    Some('"') | Some('\'') | Some('<') => {
+                        todo!("This is an unexpected-character-in-attribute-name parse error. Treat it as per the 'anything else' entry below.");
+                    }
+                    Some(anything_else) => {
+                        if let Some(Token::Tag { attributes, .. }) = &mut self.current_token {
+                            if let Some(attribute) = attributes.last_mut() {
+                                attribute.name.push(anything_else);
+                            }
+                        }
+                    }
+                },
                 State::AfterAttributeName => todo!("AfterAttributeName"),
-                State::BeforeAttributeValue => todo!("BeforeAttributeValue"),
-                State::AttributeValueDoubleQuoted => todo!("AttributeValueDoubleQuoted"),
+                State::BeforeAttributeValue => match self.consume_next_input_character() {
+                    whitespace!() => {}
+                    Some('"') => {
+                        self.switch_to(State::AttributeValueDoubleQuoted);
+                    }
+                    Some('\'') => {
+                        self.switch_to(State::AttributeValueSingleQuoted);
+                    }
+                    Some('>') => {
+                        todo!("This is a missing-attribute-value parse error. Switch to the data state. Emit the current tag token.");
+                    }
+                    Some(_) | eof!() => {
+                        self.reconsume_in_state(State::AttributeValueUnquoted);
+                    }
+                },
+                State::AttributeValueDoubleQuoted => match self.consume_next_input_character() {
+                    Some('"') => {
+                        self.switch_to(State::AfterAttributeValueQuoted);
+                    }
+                    Some('&') => {
+                        self.set_return_state(State::AttributeValueDoubleQuoted);
+                        self.switch_to(State::CharacterReference);
+                    }
+                    null!() => {
+                        todo!("This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.");
+                    }
+                    eof!() => {
+                        todo!("This is an eof-in-tag parse error. Emit an end-of-file token.");
+                    }
+                    Some(anything_else) => {
+                        if let Some(Token::Tag { attributes, .. }) = &mut self.current_token {
+                            if let Some(attribute) = attributes.last_mut() {
+                                attribute.value.push(anything_else);
+                            }
+                        }
+                    }
+                },
                 State::AttributeValueSingleQuoted => todo!("AttributeValueSingleQuoted"),
                 State::AttributeValueUnquoted => todo!("AttributeValueUnquoted"),
-                State::AfterAttributeValueQuoted => todo!("AfterAttributeValueQuoted"),
+                State::AfterAttributeValueQuoted => match self.consume_next_input_character() {
+                    whitespace!() => {
+                        self.switch_to(State::BeforeAttributeName);
+                    }
+                    Some('/') => {
+                        self.switch_to(State::SelfClosingStartTag);
+                    }
+                    Some('>') => {
+                        self.switch_to(State::Data);
+                        self.emit_current_token();
+                    }
+                    eof!() => {
+                        todo!("This is an eof-in-tag parse error. Emit an end-of-file token.");
+                    }
+                    Some(_) => {
+                        todo!("This is a missing-whitespace-between-attributes parse error. Reconsume in the before attribute name state.");
+                    }
+                },
                 State::SelfClosingStartTag => todo!("SelfClosingStartTag"),
                 State::BogusComment => todo!("BogusComment"),
                 State::MarkupDeclarationOpen => todo!("MarkupDeclarationOpen"),
