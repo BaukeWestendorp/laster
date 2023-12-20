@@ -1,3 +1,4 @@
+mod parser;
 mod tokenizer;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -6,8 +7,8 @@ pub struct Dom {}
 impl Dom {
     pub fn parse(html: &str) -> Dom {
         let tokens = tokenizer::Tokenizer::new(html).tokenize();
-        dbg!(tokens);
-        Dom {}
+        let dom = parser::Parser::new(tokens).parse();
+        dom
     }
 
     pub fn parse_file(path: &str) -> Dom {
