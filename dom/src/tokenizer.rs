@@ -95,7 +95,7 @@ pub enum Token {
     EndOfFile,
     Character(char),
     Tag {
-        is_start_tag: bool,
+        start: bool,
         tag_name: String,
         attributes: Vec<Attribute>,
     },
@@ -120,7 +120,11 @@ impl Token {
     }
 
     pub fn is_start_tag(&self) -> bool {
-        if let Token::Tag { is_start_tag, .. } = self {
+        if let Token::Tag {
+            start: is_start_tag,
+            ..
+        } = self
+        {
             return *is_start_tag;
         }
         false
@@ -232,7 +236,7 @@ impl<'input> Tokenizer<'input> {
                     }
                     ascii_alpha!() => {
                         self.set_current_token(Token::Tag {
-                            is_start_tag: true,
+                            start: true,
                             tag_name: "".to_string(),
                             attributes: vec![],
                         });
@@ -252,7 +256,7 @@ impl<'input> Tokenizer<'input> {
                     match self.consume_next_input_character() {
                         ascii_alpha!() => {
                             self.set_current_token(Token::Tag {
-                                is_start_tag: false,
+                                start: false,
                                 tag_name: "".to_string(),
                                 attributes: vec![],
                             });
