@@ -99,6 +99,36 @@ pub enum Token {
         tag_name: String,
         attributes: Vec<Attribute>,
     },
+    Comment,
+    Doctype,
+}
+
+impl Token {
+    pub fn is_start_tag_with_name(&self, names: &[&str]) -> bool {
+        self.is_start_tag() && self.is_tag_with_name(names)
+    }
+
+    pub fn is_end_tag_with_name(&self, names: &[&str]) -> bool {
+        self.is_end_tag() && self.is_tag_with_name(names)
+    }
+
+    pub fn is_tag_with_name(&self, names: &[&str]) -> bool {
+        if let Token::Tag { tag_name, .. } = self {
+            return names.contains(&tag_name.as_str());
+        }
+        false
+    }
+
+    pub fn is_start_tag(&self) -> bool {
+        if let Token::Tag { is_start_tag, .. } = self {
+            return *is_start_tag;
+        }
+        false
+    }
+
+    pub fn is_end_tag(&self) -> bool {
+        !self.is_start_tag()
+    }
 }
 
 macro_rules! null {
@@ -147,8 +177,29 @@ impl<'input> Tokenizer<'input> {
         }
     }
 
-    pub fn tokenize(&mut self) -> Vec<Token> {
-        while self.tokens.last() != Some(&Token::EndOfFile) {
+    pub fn peek(&mut self) -> Option<&Token> {
+        self.tokens.last()
+    }
+
+    pub fn next(&mut self) -> Option<Token> {
+        let mut emitted_token: Option<Token> = None;
+
+        macro_rules! emit_token {
+            ($token:expr) => {
+                emitted_token = Some($token)
+            };
+        }
+
+        macro_rules! emit_current_token {
+            () => {
+                if let Some(token) = self.current_token.take() {
+                    emit_token!(token);
+                    self.current_token = None;
+                }
+            };
+        }
+
+        while emitted_token.is_none() {
             match self.state {
                 State::Data => match self.consume_next_input_character() {
                     Some('&') => {
@@ -162,7 +213,7 @@ impl<'input> Tokenizer<'input> {
                         todo!("This is an unexpected-null-character parse error. Emit the current input character as a character token.");
                     }
                     eof!() => {
-                        self.emit_token(Token::EndOfFile);
+                        emit_token!(Token::EndOfFile);
                     }
                     Some(anything_else) => {
                         self.tokens.push(Token::Character(anything_else));
@@ -227,7 +278,7 @@ impl<'input> Tokenizer<'input> {
                     }
                     Some('>') => {
                         self.switch_to(State::Data);
-                        self.emit_current_token();
+                        emit_current_token!();
                     }
                     null!() => {
                         todo!("This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current tag token's tag name.");
@@ -360,7 +411,7 @@ impl<'input> Tokenizer<'input> {
                     }
                     Some('>') => {
                         self.switch_to(State::Data);
-                        self.emit_current_token();
+                        emit_current_token!();
                     }
                     eof!() => {
                         todo!("This is an eof-in-tag parse error. Emit an end-of-file token.");
@@ -424,7 +475,12 @@ impl<'input> Tokenizer<'input> {
                 State::NumericCharacterReferenceEnd => todo!("NumericCharacterReferenceEnd"),
             }
         }
-        self.tokens.clone()
+
+        if let Some(emitted_token) = emitted_token {
+            self.tokens.push(emitted_token);
+        }
+
+        self.peek().cloned()
     }
 
     fn current_input_character(&self) -> Option<char> {
@@ -456,16 +512,5 @@ impl<'input> Tokenizer<'input> {
         let char = self.current_input_character();
         self.insertion_point += 1;
         char
-    }
-
-    fn emit_token(&mut self, token: Token) {
-        self.tokens.push(token);
-    }
-
-    fn emit_current_token(&mut self) {
-        if let Some(token) = self.current_token.take() {
-            self.emit_token(token);
-            self.current_token = None;
-        }
     }
 }

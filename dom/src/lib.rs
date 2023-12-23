@@ -1,3 +1,5 @@
+mod arena;
+pub mod node;
 mod parser;
 mod tokenizer;
 
@@ -6,8 +8,7 @@ pub struct Dom {}
 
 impl Dom {
     pub fn parse(html: &str) -> Dom {
-        let tokens = tokenizer::Tokenizer::new(html).tokenize();
-        let dom = parser::Parser::new(tokens).parse();
+        let dom = parser::Parser::new(html).parse();
         dom
     }
 
