@@ -225,8 +225,57 @@ impl<'input> Parser<'input> {
                 }
             },
             InsertionMode::InHeadNoScript => todo!("InHeadNoScript"),
-            InsertionMode::AfterHead => todo!("AfterHead"),
-            InsertionMode::InBody => todo!("InBody"),
+            InsertionMode::AfterHead => match token {
+                whitespace!() => {
+                    todo!("Insert the character.");
+                }
+                Token::Comment => {
+                    todo!("Insert a comment.");
+                }
+                Token::Doctype => {
+                    todo!("Parse error. Ignore the token.");
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
+                    self.process_token(InsertionMode::InBody, token)
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["body"]) => {
+                    // TODO: Insert an HTML element for the token.
+
+                    // TODO: Set the frameset-ok flag to "not ok".
+
+                    self.switch_insertion_mode(InsertionMode::InBody);
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["frameset"]) => {
+                    // TODO: Insert an HTML element for the token.
+
+                    self.switch_insertion_mode(InsertionMode::InFrameset);
+                }
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&[
+                        "base", "basefont", "bgsound", "link", "meta", "noframes", "script",
+                        "style", "template", "title",
+                    ]) =>
+                {
+                    todo!();
+                }
+                Token::Tag { .. } if token.is_end_tag_with_name(&["template"]) => {
+                    self.process_token(InsertionMode::InHead, token);
+                }
+                Token::Tag { .. } if token.is_end_tag_with_name(&["body", "html", "br"]) => {
+                    todo!("Act as described in the 'anything else' entry below.")
+                }
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&["head"]) || token.is_end_tag() =>
+                {
+                    todo!("Parse error. Ignore the token.")
+                }
+                _ => {
+                    // TODO: Insert an HTML element for a "body" start tag token with no attributes.
+
+                    self.switch_insertion_mode_and_reprocess_token(InsertionMode::InBody);
+                }
+            },
+            InsertionMode::InBody => todo!("In Body"),
             InsertionMode::Text => todo!("Text"),
             InsertionMode::InTable => todo!("InTable"),
             InsertionMode::InTableText => todo!("InTableText"),
