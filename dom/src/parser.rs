@@ -298,7 +298,22 @@ impl<'input> Parser<'input> {
                 Token::Tag { .. } if token.is_end_tag_with_name(&["template"]) => todo!(),
                 Token::Tag { .. } if token.is_start_tag_with_name(&["body"]) => todo!(),
                 Token::Tag { .. } if token.is_start_tag_with_name(&["frameset"]) => todo!(),
-                Token::EndOfFile => todo!(),
+                Token::EndOfFile => {
+                    // TODO: If the stack of template insertion modes is not empty, then process the
+                    // token using the rules for the "in template" insertion
+                    // mode.
+
+                    // TODO: Otherwise, follow these steps:
+
+                    // TODO: 1. If there is a node in the stack of open elements that is not either
+                    // a dd element, a dt element, an li element, an optgroup element, an option
+                    // element, a p element, an rb element, an rp element, an rt element, an rtc
+                    // element, a tbody element, a td element, a tfoot element, a th element, a
+                    // thead element, a tr element, the body element, or the html element, then this
+                    // is a parse error.
+
+                    self.stop_parsing();
+                }
                 Token::Tag { .. } if token.is_end_tag_with_name(&["body"]) => {
                     // TODO: If the stack of open elements does not have a body
                     // element in scope, this is a parse error; ignore the
@@ -510,7 +525,19 @@ impl<'input> Parser<'input> {
             },
             InsertionMode::InFrameset => todo!("InFrameset"),
             InsertionMode::AfterFrameset => todo!("AfterFrameset"),
-            InsertionMode::AfterAfterBody => todo!("AfterAfterBody"),
+            InsertionMode::AfterAfterBody => match token {
+                Token::Comment => todo!(),
+                Token::Doctype => todo!(),
+                whitespace!() | Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
+                    self.process_token(InsertionMode::InBody, token);
+                }
+                Token::EndOfFile => self.stop_parsing(),
+                _ => {
+                    // TODO: Parsing error.
+
+                    self.switch_insertion_mode(InsertionMode::InBody);
+                }
+            },
             InsertionMode::AfterAfterFrameset => todo!("AfterAfterFrameset"),
         }
     }
