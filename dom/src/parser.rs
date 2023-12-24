@@ -165,7 +165,6 @@ impl<'input> Parser<'input> {
                 Token::Comment => {
                     todo!("Insert a comment.");
                 }
-
                 Token::Doctype => {
                     todo!("Parse error. Ignore the token.");
                 }
@@ -275,7 +274,210 @@ impl<'input> Parser<'input> {
                     self.switch_insertion_mode_and_reprocess_token(InsertionMode::InBody);
                 }
             },
-            InsertionMode::InBody => todo!("In Body"),
+            InsertionMode::InBody => match token {
+                Token::Character('\0') => todo!(),
+                whitespace!() => todo!(),
+                Token::Character(_) => todo!(),
+                Token::Comment => todo!(),
+                Token::Doctype => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&[
+                        "base", "basefont", "bgsound", "link", "meta", "noframes", "script",
+                        "style", "template", "title",
+                    ]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_end_tag_with_name(&["template"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["body"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["frameset"]) => todo!(),
+                Token::EndOfFile => todo!(),
+                Token::Tag { .. } if token.is_end_tag_with_name(&["body"]) => {
+                    // TODO: If the stack of open elements does not have a body
+                    // element in scope, this is a parse error; ignore the
+                    // token.
+
+                    // TODO: Otherwise, if there is a node in the stack of open
+                    // elements that is not either a dd element, a dt element,
+                    // an li element, an optgroup element, an option element, a
+                    // p element, an rb element, an rp element, an rt element,
+                    // an rtc element, a tbody element, a td element, a tfoot
+                    // element, a th element, a thead element, a tr element, the
+                    // body element, or the html element, then this is a parse
+                    // error.
+
+                    self.switch_insertion_mode(InsertionMode::AfterBody);
+                }
+                Token::Tag { .. } if token.is_end_tag_with_name(&["html"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&[
+                        "address",
+                        "article",
+                        "aside",
+                        "blockquote",
+                        "center",
+                        "details",
+                        "dialog",
+                        "dir",
+                        "div",
+                        "dl",
+                        "fieldset",
+                        "figcaption",
+                        "figure",
+                        "footer",
+                        "header",
+                        "hgroup",
+                        "main",
+                        "menu",
+                        "nav",
+                        "ol",
+                        "p",
+                        "search",
+                        "section",
+                        "summary",
+                        "ul",
+                    ]) =>
+                {
+                    // TODO: If the stack of open elements has a p element in
+                    // button scope, then close a p element.
+
+                    // TODO: Insert an HTML element for the token.
+                }
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&["h1", "h2", "h3", "h4", "h5", "h6"]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["pre", "listing"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["form"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["li"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["dd", "dt"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["plaintext"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["button"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_end_tag_with_name(&[
+                        "address",
+                        "article",
+                        "aside",
+                        "blockquote",
+                        "button",
+                        "center",
+                        "details",
+                        "dialog",
+                        "dir",
+                        "div",
+                        "dl",
+                        "fieldset",
+                        "figcaption",
+                        "figure",
+                        "footer",
+                        "header",
+                        "hgroup",
+                        "listing",
+                        "main",
+                        "menu",
+                        "nav",
+                        "ol",
+                        "pre",
+                        "search",
+                        "section",
+                        "summary",
+                        "ul",
+                    ]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_end_tag_with_name(&["form"]) => todo!(),
+                Token::Tag { .. } if token.is_end_tag_with_name(&["p"]) => {
+                    // TODO: If the stack of open elements does not have a p
+                    // element in button scope, then this is a parse error;
+                    // insert an HTML element for a "p" start tag token with no
+                    // attributes.
+
+                    // TODO: Close a p element.
+                }
+                Token::Tag { .. } if token.is_end_tag_with_name(&["lo"]) => todo!(),
+                Token::Tag { .. } if token.is_end_tag_with_name(&["dd", "dt"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_end_tag_with_name(&["h1", "h2", "h3", "h4", "h5", "h6"]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["a"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&[
+                        "b", "big", "code", "em", "font", "i", "s", "small", "strike", "strong",
+                        "tt", "u",
+                    ]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["nobr"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_end_tag_with_name(&[
+                        "a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike",
+                        "strong", "tt", "u",
+                    ]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&["applet", "marquee", "object"]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. }
+                    if token.is_end_tag_with_name(&["applet", "marquee", "object"]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["table"]) => todo!(),
+                Token::Tag { .. } if token.is_end_tag_with_name(&["br"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&[
+                        "area", "br", "embed", "img", "keygen", "wbr",
+                    ]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["input"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&["param", "source", "track"]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["hr"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["image"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["textarea"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["xmp"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["iframe"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["noembed"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&["noscript"]) && self.scripting =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["select"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["optgroup", "option"]) => {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag_with_name(&["rb", "rtc"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["rp", "rt"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["math"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["svg"]) => todo!(),
+                Token::Tag { .. }
+                    if token.is_start_tag_with_name(&[
+                        "caption", "col", "colgroup", "frame", "head", "tbody", "td", "tfoot",
+                        "th", "thead", "tr",
+                    ]) =>
+                {
+                    todo!()
+                }
+                Token::Tag { .. } if token.is_start_tag() => todo!(),
+                Token::Tag { .. } if token.is_end_tag() => todo!(),
+                _ => unreachable!(),
+            },
             InsertionMode::Text => todo!("Text"),
             InsertionMode::InTable => todo!("InTable"),
             InsertionMode::InTableText => todo!("InTableText"),
