@@ -115,7 +115,7 @@ impl<'input> Parser<'input> {
                 {
                     todo!("Act as described in the 'anything else' entry below.");
                 }
-                Token::Tag { start: false, .. } => {
+                Token::Tag { .. } if token.is_end_tag() => {
                     todo!("Parser error. Ignore the token.");
                 }
                 _ => {

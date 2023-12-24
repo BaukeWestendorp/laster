@@ -120,12 +120,8 @@ impl Token {
     }
 
     pub fn is_start_tag(&self) -> bool {
-        if let Token::Tag {
-            start: is_start_tag,
-            ..
-        } = self
-        {
-            return *is_start_tag;
+        if let Token::Tag { start, .. } = self {
+            return *start;
         }
         false
     }
