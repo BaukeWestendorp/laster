@@ -37,6 +37,7 @@ pub struct Parser<'input> {
     insertion_mode: InsertionMode,
     should_reprocess_token: bool,
     open_elements: Vec<NodeId>,
+    should_stop_parsing: bool,
     scripting: bool,
 }
 
@@ -48,6 +49,7 @@ impl<'input> Parser<'input> {
             insertion_mode: InsertionMode::Initial,
             should_reprocess_token: false,
             open_elements: vec![],
+            should_stop_parsing: false,
             scripting: false,
         }
     }
@@ -57,6 +59,10 @@ impl<'input> Parser<'input> {
             true => self.tokenizer.peek().cloned(),
             false => self.tokenizer.next(),
         } {
+            if self.should_stop_parsing {
+                break;
+            }
+
             self.should_reprocess_token = false;
             self.dispatch(&token)
         }
@@ -489,12 +495,28 @@ impl<'input> Parser<'input> {
             InsertionMode::InSelect => todo!("InSelect"),
             InsertionMode::InSelectInTable => todo!("InSelectInTable"),
             InsertionMode::InTemplate => todo!("InTemplate"),
-            InsertionMode::AfterBody => todo!("AfterBody"),
+            InsertionMode::AfterBody => match token {
+                whitespace!() => self.process_token(InsertionMode::InBody, token),
+                Token::Comment => todo!(),
+                Token::Doctype => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
+                    self.process_token(InsertionMode::InBody, token);
+                }
+                Token::Tag { .. } if token.is_end_tag_with_name(&["html"]) => {
+                    self.process_token(InsertionMode::AfterAfterBody, token);
+                }
+                Token::EndOfFile => self.stop_parsing(),
+                _ => todo!(),
+            },
             InsertionMode::InFrameset => todo!("InFrameset"),
             InsertionMode::AfterFrameset => todo!("AfterFrameset"),
             InsertionMode::AfterAfterBody => todo!("AfterAfterBody"),
             InsertionMode::AfterAfterFrameset => todo!("AfterAfterFrameset"),
         }
+    }
+
+    fn stop_parsing(&mut self) {
+        self.should_stop_parsing = true;
     }
 
     fn switch_insertion_mode(&mut self, insertion_mode: InsertionMode) {
