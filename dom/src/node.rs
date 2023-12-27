@@ -3,13 +3,13 @@ use crate::parser::Namespace;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeKind {
+    Document,
     Element {
         namespace_uri: Option<String>,
         prefix: Option<String>,
         local_name: String,
         tag_name: String,
     },
-    Document,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -67,5 +67,28 @@ impl Node {
             return *namespace_uri == Some(namespace.url().to_string());
         }
         false
+    }
+
+    pub fn dump(&self, arena: &NodeArena) {
+        self.internal_dump(arena, 0);
+    }
+
+    fn internal_dump(&self, arena: &NodeArena, indent: usize) {
+        let indent_string = " ".repeat(indent * 2);
+
+        println!("{indent_string}{}", self);
+        for child in &self.children {
+            let child = arena.get_node(*child);
+            child.internal_dump(arena, indent + 1);
+        }
+    }
+}
+
+impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            NodeKind::Document => write!(f, "Document"),
+            NodeKind::Element { tag_name, .. } => write!(f, "<{}>", tag_name),
+        }
     }
 }

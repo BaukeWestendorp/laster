@@ -3,5 +3,5 @@ fn main() {
     let mut arena = dom::arena::NodeArena::new();
     let document = dom::Dom::parse(html, &mut arena);
 
-    dbg!(document);
+    document.dump(&arena);
 }
