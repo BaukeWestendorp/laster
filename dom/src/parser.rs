@@ -68,9 +68,9 @@ impl InsertionLocation {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Parser<'input> {
-    arena: NodeArena,
+#[derive(Debug)]
+pub struct Parser<'input, 'arena> {
+    arena: &'arena mut NodeArena,
     tokenizer: tokenizer::Tokenizer<'input>,
     insertion_mode: InsertionMode,
     should_reprocess_token: bool,
@@ -82,10 +82,8 @@ pub struct Parser<'input> {
     foster_parenting: bool,
 }
 
-impl<'input> Parser<'input> {
-    pub fn new(html: &'input str) -> Self {
-        let mut arena = NodeArena::new();
-
+impl<'input, 'arena> Parser<'input, 'arena> {
+    pub fn new(html: &'input str, arena: &'arena mut NodeArena) -> Self {
         Self {
             tokenizer: tokenizer::Tokenizer::new(html),
             insertion_mode: InsertionMode::Initial,
@@ -328,6 +326,7 @@ impl<'input> Parser<'input> {
                     todo!("Parse error. Ignore the token.")
                 }
                 _ => {
+                    // Insert an HTML element for a "body" start tag token with no attributes.
                     self.insert_html_element(&Token::Tag {
                         start: true,
                         tag_name: "body".to_string(),

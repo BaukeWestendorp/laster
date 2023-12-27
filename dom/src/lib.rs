@@ -1,6 +1,7 @@
+use arena::NodeArena;
 use node::Node;
 
-mod arena;
+pub mod arena;
 pub mod node;
 mod parser;
 mod tokenizer;
@@ -9,13 +10,13 @@ mod tokenizer;
 pub struct Dom {}
 
 impl Dom {
-    pub fn parse(html: &str) -> Node {
-        let document = parser::Parser::new(html).parse();
+    pub fn parse(html: &str, arena: &mut NodeArena) -> Node {
+        let document = parser::Parser::new(html, arena).parse();
         document
     }
 
-    pub fn parse_file(path: &str) -> Node {
+    pub fn parse_file(path: &str, arena: &mut NodeArena) -> Node {
         let file_content = std::fs::read_to_string(path).unwrap();
-        Dom::parse(&file_content)
+        Dom::parse(&file_content, arena)
     }
 }
