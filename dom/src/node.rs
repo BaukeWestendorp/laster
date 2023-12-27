@@ -69,6 +69,13 @@ impl Node {
         false
     }
 
+    pub fn is_element_with_tag_name(&self, tag_name: &str) -> bool {
+        if let NodeKind::Element { tag_name: name, .. } = &self.kind {
+            return name == tag_name;
+        }
+        false
+    }
+
     pub fn dump(&self, arena: &NodeArena) {
         self.internal_dump(arena, 0);
     }

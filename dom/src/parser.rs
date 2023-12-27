@@ -75,7 +75,7 @@ pub struct Parser<'input, 'arena> {
     insertion_mode: InsertionMode,
     should_reprocess_token: bool,
     document: NodeId,
-    open_elements: Vec<NodeId>,
+    stack_of_open_elements: StackOfOpenElements,
     head_element: Option<NodeId>,
     should_stop_parsing: bool,
     scripting: bool,
@@ -90,7 +90,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             insertion_mode: InsertionMode::Initial,
             should_reprocess_token: false,
             document: arena.create_node(Node::create_document()),
-            open_elements: vec![],
+            stack_of_open_elements: StackOfOpenElements::new(),
             head_element: None,
             should_stop_parsing: false,
             scripting: false,
@@ -166,7 +166,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         let html_element =
                             self.create_element_for_token(token, Namespace::Html, self.document);
                         self.arena.append(html_element, self.document);
-                        self.open_elements.push(html_element);
+                        self.stack_of_open_elements.push(html_element);
                         self.switch_insertion_mode(InsertionMode::BeforeHead);
                     }
                     Token::Tag { .. }
@@ -461,10 +461,18 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 }
                 Token::Tag { .. } if token.is_end_tag_with_name(&["form"]) => todo!(),
                 Token::Tag { .. } if token.is_end_tag_with_name(&["p"]) => {
-                    // TODO: If the stack of open elements does not have a p
-                    // element in button scope, then this is a parse error;
-                    // insert an HTML element for a "p" start tag token with no
-                    // attributes.
+                    if !self
+                        .stack_of_open_elements
+                        .has_element_in_button_scope(&self.arena, "p")
+                    {
+                        // TODO: Parser error.
+
+                        self.insert_html_element(&Token::Tag {
+                            start: true,
+                            tag_name: "p".to_string(),
+                            attributes: vec![],
+                        });
+                    }
 
                     // TODO: Close a p element.
                 }
@@ -617,7 +625,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
 
         // Push element onto the stack of open elements so that it is the new
         // current node.
-        self.open_elements.push(element);
+        self.stack_of_open_elements.push(element);
 
         // Return element.
         element
@@ -725,7 +733,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             // If there was an override target specified, then let target be the override target.
             Some(override_target) => override_target,
             // Otherwise, let target be the current node.
-            None => self.current_node(),
+            None => self.stack_of_open_elements.current_node(),
         };
 
         // Determine the adjusted insertion location using the first matching
@@ -762,34 +770,15 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         self.switch_insertion_mode(insertion_mode);
     }
 
-    fn stack_of_open_elements_is_empty(&self) -> bool {
-        self.open_elements.len() == 0
-    }
-
-    fn current_node(&self) -> NodeId {
-        *self
-            .open_elements
-            .last()
-            .expect("Should always have a value. If not the parser should have finished.")
-    }
-
-    fn adjusted_current_node(&self) -> NodeId {
-        // TODO: The adjusted current node is the context element
-        // if the parser was created as part of the
-        // HTML fragment parsing algorithm and the stack of open elements
-        // has only one element in it (fragment case);
-
-        // otherwise, the adjusted current node is the current node.
-        self.current_node()
-    }
-
     fn is_in_foreign_content(&self, token: &Token) -> bool {
         // If the stack of open elements is empty
-        if self.stack_of_open_elements_is_empty() {
+        if self.stack_of_open_elements.is_empty() {
             return false;
         }
 
-        let acn = self.arena.get_node(self.adjusted_current_node());
+        let acn = self
+            .arena
+            .get_node(self.stack_of_open_elements.adjusted_current_node());
 
         // If the adjusted current node is an element in the HTML namespace
         if acn.is_element_in_namespace(Namespace::Html) {
@@ -818,5 +807,115 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         }
 
         true
+    }
+}
+
+/// https://html.spec.whatwg.org/multipage/parsing.html#the-stack-of-open-elements
+#[derive(Debug, Clone, PartialEq)]
+struct StackOfOpenElements {
+    elements: Vec<NodeId>,
+}
+
+impl StackOfOpenElements {
+    const ELEMENTS: [&'static str; 9] = [
+        "applet", "caption", "html", "table", "td", "th", "marquee", "object",
+        "template",
+        // TODO: MathML mi
+        // TODO: MathML mo
+        // TODO: MathML mn
+        // TODO: MathML ms
+        // TODO: MathML mtext
+        // TODO: MathML annotation-xml
+        // TODO: SVG foreignObject
+        // TODO: SVG desc
+        // TODO: SVG title
+    ];
+
+    pub fn new() -> Self {
+        Self { elements: vec![] }
+    }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#current-node
+    pub fn current_node(&self) -> NodeId {
+        *self
+            .elements
+            .last()
+            .expect("Should always have a value. If not the parser should have finished.")
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#adjusted-current-node
+    fn adjusted_current_node(&self) -> NodeId {
+        // TODO: The adjusted current node is the context element
+        // if the parser was created as part of the
+        // HTML fragment parsing algorithm and the stack of open elements
+        // has only one element in it (fragment case);
+
+        // otherwise, the adjusted current node is the current node.
+        self.current_node()
+    }
+
+    pub fn push(&mut self, element: NodeId) {
+        self.elements.push(element);
+    }
+
+    pub fn has_element_in_specific_scope(
+        &self,
+        arena: &NodeArena,
+        target_node: &str,
+        tag_names: &[&str],
+    ) -> bool {
+        // 1. Initialize node to be the current node (the bottommost node of the stack).
+        for node in self.elements.iter().rev() {
+            let node = arena.get_node(*node);
+
+            // 2. If node is the target node, terminate in a match state.
+            if node.is_element_with_tag_name(target_node) {
+                return true;
+            }
+
+            // 3. Otherwise, if node is one of the element types in list, terminate in
+            // a failure state.
+            for tag_name in tag_names.iter() {
+                if node.is_element_with_tag_name(tag_name) {
+                    return true;
+                }
+            }
+
+            // 4. Otherwise, set node to the previous entry in the stack of open
+            // elements and return to step 2. (This will never fail, since the
+            // loop will always terminate in the previous step if
+            // the top of the stack — an html element — is reached.)
+        }
+
+        unreachable!()
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-list-scope
+    pub fn has_element_in_list_scope(&self, arena: &NodeArena, element: &str) -> bool {
+        let mut tag_names = Self::ELEMENTS.to_vec();
+        tag_names.extend(vec!["ol", "ul"]);
+        self.has_element_in_specific_scope(arena, element, &tag_names)
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-button-scope
+    pub fn has_element_in_button_scope(&self, arena: &NodeArena, element: &str) -> bool {
+        let mut tag_names = Self::ELEMENTS.to_vec();
+        tag_names.extend(vec!["button"]);
+        self.has_element_in_specific_scope(arena, element, &tag_names)
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-table-scope
+    pub fn has_element_in_table_scope(&self, arena: &NodeArena, element: &str) -> bool {
+        let mut tag_names = Self::ELEMENTS.to_vec();
+        tag_names.extend(vec!["html", "table", "template"]);
+        self.has_element_in_specific_scope(arena, element, &tag_names)
     }
 }
