@@ -1,5 +1,5 @@
 use crate::arena::{NodeArena, NodeId};
-use crate::node::Node;
+use crate::node::{Node, NodeKind};
 use crate::tokenizer::{self, Token};
 
 pub enum Namespace {
@@ -410,10 +410,17 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         "ul",
                     ]) =>
                 {
-                    // TODO: If the stack of open elements has a p element in
+                    // If the stack of open elements has a p element in
                     // button scope, then close a p element.
+                    if self
+                        .stack_of_open_elements
+                        .has_element_in_button_scope(&self.arena, "p")
+                    {
+                        self.close_p_element();
+                    }
 
-                    // TODO: Insert an HTML element for the token.
+                    // Insert an HTML element for the token.
+                    self.insert_html_element(token);
                 }
                 Token::Tag { .. }
                     if token.is_start_tag_with_name(&["h1", "h2", "h3", "h4", "h5", "h6"]) =>
@@ -461,12 +468,14 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 }
                 Token::Tag { .. } if token.is_end_tag_with_name(&["form"]) => todo!(),
                 Token::Tag { .. } if token.is_end_tag_with_name(&["p"]) => {
+                    // If the stack of open elements does not have a p element in button scope,
                     if !self
                         .stack_of_open_elements
                         .has_element_in_button_scope(&self.arena, "p")
                     {
-                        // TODO: Parser error.
+                        // TODO: then this is a parse error;
 
+                        // insert an HTML element for a "p" start tag token with no attributes.
                         self.insert_html_element(&Token::Tag {
                             start: true,
                             tag_name: "p".to_string(),
@@ -474,7 +483,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         });
                     }
 
-                    // TODO: Close a p element.
+                    // Close a p element.
+                    self.close_p_element();
                 }
                 Token::Tag { .. } if token.is_end_tag_with_name(&["lo"]) => todo!(),
                 Token::Tag { .. } if token.is_end_tag_with_name(&["dd", "dt"]) => todo!(),
@@ -757,6 +767,49 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         adjusted_insertion_location
     }
 
+    /// https://html.spec.whatwg.org/multipage/parsing.html#close-a-p-element
+    fn close_p_element(&mut self) {
+        // Generate implied end tags, except for p elements.
+        self.generate_implied_end_tags_except_for("p");
+
+        // If the current node is not a p element, then this is a parse error.
+        if !self
+            .arena
+            .get_node(self.stack_of_open_elements.current_node())
+            .is_element_with_tag_name("p")
+        {
+            // TODO: Parser error.
+        }
+
+        self.stack_of_open_elements
+            .pop_until_element_with_tag_name(&self.arena, "p");
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#generate-implied-end-tags
+    fn generate_implied_end_tags_except_for(&mut self, except: &str) {
+        // while the current node is a dd element, a dt element, an li element, an
+        // optgroup element, an option element, a p element, an rb element, an rp
+        // element, an rt element, or an rtc element, the UA must pop the current node
+        // off the stack of open elements.
+        loop {
+            let node = self
+                .arena
+                .get_node(self.stack_of_open_elements.current_node());
+
+            if node.is_element_with_tag_name(except) {
+                return;
+            }
+
+            if !node.is_element_with_one_of_tag_names(&[
+                "dd", "dt", "li", "optgroup", "option", "p", "rb", "rp", "rt", "rtc",
+            ]) {
+                return;
+            }
+
+            self.stack_of_open_elements.pop();
+        }
+    }
+
     fn stop_parsing(&mut self) {
         self.should_stop_parsing = true;
     }
@@ -864,6 +917,18 @@ impl StackOfOpenElements {
 
     pub fn push(&mut self, element: NodeId) {
         self.elements.push(element);
+    }
+
+    pub fn pop(&mut self) -> Option<NodeId> {
+        self.elements.pop()
+    }
+
+    pub fn pop_until_element_with_tag_name(&mut self, arena: &NodeArena, tag_name: &str) {
+        while let Some(node) = self.elements.pop() {
+            if arena.get_node(node).is_element_with_tag_name(tag_name) {
+                break;
+            }
+        }
     }
 
     pub fn has_element_in_specific_scope(
