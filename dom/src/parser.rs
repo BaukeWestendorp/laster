@@ -79,6 +79,7 @@ pub struct Parser<'input, 'arena> {
     head_element: Option<NodeId>,
     should_stop_parsing: bool,
     scripting: bool,
+    frameset_ok: bool,
     foster_parenting: bool,
 }
 
@@ -93,6 +94,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             head_element: None,
             should_stop_parsing: false,
             scripting: false,
+            frameset_ok: true,
             foster_parenting: false,
             arena,
         }
@@ -165,7 +167,6 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                             self.create_element_for_token(token, Namespace::Html, self.document);
                         self.arena.append(html_element, self.document);
                         self.open_elements.push(html_element);
-
                         self.switch_insertion_mode(InsertionMode::BeforeHead);
                     }
                     Token::Tag { .. }
@@ -198,9 +199,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["head"]) => {
                     let head = self.insert_html_element(&token);
-
                     self.head_element = Some(head);
-
                     self.switch_insertion_mode(InsertionMode::InHead);
                 }
                 Token::Tag { .. }
@@ -295,15 +294,12 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     self.process_token(InsertionMode::InBody, token)
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["body"]) => {
-                    // TODO: Insert an HTML element for the token.
-
-                    // TODO: Set the frameset-ok flag to "not ok".
-
+                    self.insert_html_element(token);
+                    self.frameset_ok = false;
                     self.switch_insertion_mode(InsertionMode::InBody);
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["frameset"]) => {
-                    // TODO: Insert an HTML element for the token.
-
+                    self.insert_html_element(token);
                     self.switch_insertion_mode(InsertionMode::InFrameset);
                 }
                 Token::Tag { .. }
@@ -326,13 +322,11 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     todo!("Parse error. Ignore the token.")
                 }
                 _ => {
-                    // Insert an HTML element for a "body" start tag token with no attributes.
                     self.insert_html_element(&Token::Tag {
                         start: true,
                         tag_name: "body".to_string(),
                         attributes: vec![],
                     });
-
                     self.switch_insertion_mode_and_reprocess_token(InsertionMode::InBody);
                 }
             },
