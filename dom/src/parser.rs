@@ -1,6 +1,18 @@
 use crate::arena::{NodeArena, NodeId};
+use crate::node::Node;
 use crate::tokenizer::{self, Token};
-use crate::Dom;
+
+pub enum Namespace {
+    Html,
+}
+
+impl Namespace {
+    pub fn url(&self) -> &str {
+        match self {
+            Namespace::Html => "http://www.w3.org/1999/xhtml",
+        }
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,31 +42,65 @@ enum InsertionMode {
     AfterAfterFrameset,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct InsertionLocation {
+    parent: NodeId,
+    after: Option<NodeId>,
+}
+
+impl InsertionLocation {
+    /// https://html.spec.whatwg.org/multipage/parsing.html#insert-an-element-at-the-adjusted-insertion-location
+    pub fn insert_element(&self, arena: &mut NodeArena, element: NodeId) {
+        // TODO: If it is not possible to insert element at the adjusted
+        // insertion location, abort these steps.
+
+        // TODO: If the parser was not created as part of the HTML fragment
+        // parsing algorithm, then push a new element queue onto
+        // element's relevant agent's custom element reactions stack.
+
+        // Insert element at the adjusted insertion location.
+        arena.insert(element, self.parent, self.after)
+
+        // TODO: If the parser was not created as part of the HTML fragment
+        // parsing algorithm, then pop the element queue from element's
+        // relevant agent's custom element reactions stack, and invoke
+        // custom element reactions in that queue.
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Parser<'input> {
     arena: NodeArena,
     tokenizer: tokenizer::Tokenizer<'input>,
     insertion_mode: InsertionMode,
     should_reprocess_token: bool,
+    document: NodeId,
     open_elements: Vec<NodeId>,
+    head_element: Option<NodeId>,
     should_stop_parsing: bool,
     scripting: bool,
+    foster_parenting: bool,
 }
 
 impl<'input> Parser<'input> {
     pub fn new(html: &'input str) -> Self {
+        let mut arena = NodeArena::new();
+
         Self {
-            arena: NodeArena::new(),
             tokenizer: tokenizer::Tokenizer::new(html),
             insertion_mode: InsertionMode::Initial,
             should_reprocess_token: false,
+            document: arena.create_node(Node::create_document()),
             open_elements: vec![],
+            head_element: None,
             should_stop_parsing: false,
             scripting: false,
+            foster_parenting: false,
+            arena,
         }
     }
 
-    pub fn parse(mut self) -> Dom {
+    pub fn parse(mut self) -> Node {
         while let Some(token) = match self.should_reprocess_token {
             true => self.tokenizer.peek().cloned(),
             false => self.tokenizer.next(),
@@ -66,7 +112,8 @@ impl<'input> Parser<'input> {
             self.should_reprocess_token = false;
             self.dispatch(&token)
         }
-        Dom {}
+
+        self.arena.get_node(self.document).clone()
     }
 
     /// https://html.spec.whatwg.org/multipage/parsing.html#tree-construction-dispatcher
@@ -102,36 +149,44 @@ impl<'input> Parser<'input> {
                     // TODO: If the document is not an iframe srcdoc document, then this is a parse
                     // error; if the parser cannot change the mode flag is false, set the Document
                     // to quirks mode.
-                    self.switch_insertion_mode(InsertionMode::BeforeHtml);
-                }
-            },
-            InsertionMode::BeforeHtml => match token {
-                Token::Doctype => {
-                    todo!("Parse error. Ignore the token.");
-                }
-                Token::Comment => {
-                    todo!("Insert a comment as the last child of the Document object.");
-                }
-                whitespace!() => {}
-                Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
-                    todo!();
-                }
-                Token::Tag { .. }
-                    if token.is_end_tag_with_name(&["head", "body", "html", "br"]) =>
-                {
-                    todo!("Act as described in the 'anything else' entry below.");
-                }
-                Token::Tag { .. } if token.is_end_tag() => {
-                    todo!("Parser error. Ignore the token.");
-                }
-                _ => {
-                    // TODO: Create an html element whose node document is the Document object.
-                    // Append it to the Document object. Put this element in the stack of open
-                    // elements.
 
-                    self.switch_insertion_mode_and_reprocess_token(InsertionMode::BeforeHead);
+                    self.switch_insertion_mode_and_reprocess_token(InsertionMode::BeforeHtml);
                 }
             },
+            InsertionMode::BeforeHtml => {
+                match token {
+                    Token::Doctype => {
+                        todo!("Parse error. Ignore the token.");
+                    }
+                    Token::Comment => {
+                        todo!("Insert a comment as the last child of the Document object.");
+                    }
+                    whitespace!() => {}
+                    Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
+                        let html_element =
+                            self.create_element_for_token(token, Namespace::Html, self.document);
+                        self.arena.append(html_element, self.document);
+                        self.open_elements.push(html_element);
+
+                        self.switch_insertion_mode(InsertionMode::BeforeHead);
+                    }
+                    Token::Tag { .. }
+                        if token.is_end_tag_with_name(&["head", "body", "html", "br"]) =>
+                    {
+                        todo!("Act as described in the 'anything else' entry below.");
+                    }
+                    Token::Tag { .. } if token.is_end_tag() => {
+                        todo!("Parser error. Ignore the token.");
+                    }
+                    _ => {
+                        // TODO: Create an html element whose node document is the Document object.
+                        // Append it to the Document object. Put this element in the stack of open
+                        // elements.
+
+                        self.switch_insertion_mode_and_reprocess_token(InsertionMode::BeforeHead);
+                    }
+                }
+            }
             InsertionMode::BeforeHead => match token {
                 whitespace!() => {}
                 Token::Comment => {
@@ -141,15 +196,13 @@ impl<'input> Parser<'input> {
                     todo!("Parse error. Ignore the token.");
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
-                    todo!("Process the token using the rules for the 'in body' insertion mode.");
+                    self.process_token(InsertionMode::InBody, token);
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["head"]) => {
-                    // TODO: Insert an HTML element for the token.
+                    let head = self.insert_html_element(&token);
 
-                    // TODO: Set the head element pointer to the newly created
-                    // head element.
+                    self.head_element = Some(head);
 
-                    // TODO: Switch the insertion mode to "in head".
                     self.switch_insertion_mode(InsertionMode::InHead);
                 }
                 Token::Tag { .. }
@@ -275,7 +328,11 @@ impl<'input> Parser<'input> {
                     todo!("Parse error. Ignore the token.")
                 }
                 _ => {
-                    // TODO: Insert an HTML element for a "body" start tag token with no attributes.
+                    self.insert_html_element(&Token::Tag {
+                        start: true,
+                        tag_name: "body".to_string(),
+                        attributes: vec![],
+                    });
 
                     self.switch_insertion_mode_and_reprocess_token(InsertionMode::InBody);
                 }
@@ -542,6 +599,163 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// https://html.spec.whatwg.org/multipage/parsing.html#insert-a-foreign-element
+    fn insert_foreign_element(
+        &mut self,
+        token: &Token,
+        namespace: Namespace,
+        only_add_to_element_stack: bool,
+    ) -> NodeId {
+        // Let the adjusted insertion location be the appropriate place for
+        // inserting a node.
+        let adjusted_insertion_location = self.appropriate_place_for_inserting_node(None);
+
+        // Let element be the result of creating an element for the token in the
+        // given namespace, with the intended parent being the element in which
+        // the adjusted insertion location finds itself.
+        let element =
+            self.create_element_for_token(&token, namespace, adjusted_insertion_location.parent);
+
+        // If onlyAddToElementStack is false, then run insert an element at the
+        // adjusted insertion location with element.
+        if !only_add_to_element_stack {
+            adjusted_insertion_location.insert_element(&mut self.arena, element);
+        }
+
+        // Push element onto the stack of open elements so that it is the new
+        // current node.
+        self.open_elements.push(element);
+
+        // Return element.
+        element
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#insert-an-html-element
+    fn insert_html_element(&mut self, token: &Token) -> NodeId {
+        self.insert_foreign_element(token, Namespace::Html, false)
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#create-an-element-for-the-token
+    fn create_element_for_token(
+        &mut self,
+        token: &Token,
+        namespace: Namespace,
+        intended_parent: NodeId,
+    ) -> NodeId {
+        // TODO: If the active speculative HTML parser is not null, then return
+        // the result of creating a speculative mock element given given
+        // namespace, the tag name of the given token, and the
+        // attributes of the given token.
+
+        // TODO: Otherwise, optionally create a speculative mock element given
+        // given namespace, the tag name of the given token, and the
+        // attributes of the given token.
+
+        // Let document be intended parent's node document.
+        let document = self
+            .arena
+            .get_node(intended_parent)
+            .node_document(&self.arena);
+
+        // Let local name be the tag name of the token.
+        let local_name = match token {
+            Token::Tag { tag_name, .. } => tag_name,
+            _ => panic!("Expected Token::Tag token, got {:?}", token),
+        };
+
+        // TODO: Let is be the value of the "is" attribute in the given token,
+        // if such an attribute exists, or null otherwise.
+        let is = None;
+
+        // TODO: Let definition be the result of looking up a custom element
+        // definition given document, given namespace, local name, and is.
+
+        // TODO: If definition is non-null and the parser was not created as
+        // part of the HTML fragment parsing algorithm, then let will execute
+        // script be true. Otherwise, let it be false.
+        let execute_script = false;
+
+        // If will execute script is true, then:
+        if execute_script {
+            // TODO: (See spec)
+        }
+
+        // Let element be the result of creating an element given
+        // document, localName, given namespace, null, and is. If will execute
+        // script is true, set the synchronous custom elements flag; otherwise,
+        // leave it unset.
+        let element = Node::create_element(
+            document,
+            local_name.clone(),
+            namespace,
+            None,
+            is,
+            execute_script,
+        );
+
+        // TODO: Append each attribute in the given token to element.
+
+        // If will execute script is true, then:
+        if execute_script {
+            // TODO: (See spec)
+        }
+
+        // TODO: If element has an xmlns attribute in the XMLNS namespace whose
+        // value is not exactly the same as the element's namespace, that is a
+        // parse error. Similarly, if element has an xmlns:xlink attribute in
+        // the XMLNS namespace whose value is not the XLink Namespace, that is a
+        // parse error.
+
+        // TODO: If element is a resettable element, invoke its reset algorithm.
+        // (This initializes the element's value and checkedness based on the
+        // element's attributes.)
+
+        // TODO: If element is a form-associated element and not a
+        // form-associated custom element, the form element pointer is not null,
+        // there is no template element on the stack of open elements, element
+        // is either not listed or doesn't have a form attribute, and the
+        // intended parent is in the same tree as the element pointed to by the
+        // form element pointer, then associate element with the form element
+        // pointed to by the form element pointer and set element's parser
+        // inserted flag.
+
+        // Return element.
+        self.arena.create_node(element)
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#appropriate-place-for-inserting-a-node
+    fn appropriate_place_for_inserting_node(
+        &self,
+        override_target: Option<NodeId>,
+    ) -> InsertionLocation {
+        let target = match override_target {
+            // If there was an override target specified, then let target be the override target.
+            Some(override_target) => override_target,
+            // Otherwise, let target be the current node.
+            None => self.current_node(),
+        };
+
+        // Determine the adjusted insertion location using the first matching
+        // steps from the following list:
+        let adjusted_insertion_location = if self.foster_parenting {
+            todo!("Implement foster parenting")
+        } else {
+            // Let adjusted insertion location be inside target, after its last child (if
+            // any).
+            InsertionLocation {
+                parent: target,
+                after: None,
+            }
+        };
+
+        // TODO: If the adjusted insertion location is inside a template
+        // element, let it instead be inside the template element's template
+        // contents, after its last child (if any).
+
+        // Return the adjusted insertion location.
+        adjusted_insertion_location
+    }
+
     fn stop_parsing(&mut self) {
         self.should_stop_parsing = true;
     }
@@ -568,22 +782,48 @@ impl<'input> Parser<'input> {
 
     fn adjusted_current_node(&self) -> NodeId {
         // TODO: The adjusted current node is the context element
-        //      if the parser was created as part of the
-        //      HTML fragment parsing algorithm and the stack of open elements
-        //      has only one element in it (fragment case);
+        // if the parser was created as part of the
+        // HTML fragment parsing algorithm and the stack of open elements
+        // has only one element in it (fragment case);
 
         // otherwise, the adjusted current node is the current node.
         self.current_node()
     }
 
     fn is_in_foreign_content(&self, token: &Token) -> bool {
-        !(self.stack_of_open_elements_is_empty() ||
-        // TODO: If the adjusted current node is an element in the HTML namespace
-        // TODO: If the adjusted current node is a MathML text integration point and the token is a start tag whose tag name is neither "mglyph" nor "malignmark"
-        // TODO: If the adjusted current node is a MathML text integration point and the token is a character token
-        // TODO: If the adjusted current node is a MathML annotation-xml element and the token is a start tag whose tag name is "svg"
-        // TODO: If the adjusted current node is an HTML integration point and the token is a start tag
-        // TODO: If the adjusted current node is an HTML integration point and the token is a character token
-        token == &Token::EndOfFile)
+        // If the stack of open elements is empty
+        if self.stack_of_open_elements_is_empty() {
+            return false;
+        }
+
+        let acn = self.arena.get_node(self.adjusted_current_node());
+
+        // If the adjusted current node is an element in the HTML namespace
+        if acn.is_element_in_namespace(Namespace::Html) {
+            return false;
+        }
+
+        // TODO: If the adjusted current node is a MathML text integration point and the
+        // token is a start tag whose tag name is neither "mglyph" nor
+        // "malignmark"
+
+        // TODO: If the adjusted current node is a MathML text integration point and the
+        // token is a character token
+
+        // TODO: If the adjusted current node is a MathML annotation-xml element and the
+        // token is a start tag whose tag name is "svg"
+
+        // TODO: If the adjusted current node is an HTML integration point and the token
+        // is a start tag
+
+        // TODO: If the adjusted current node is an HTML integration point and the token
+        // is a character token
+
+        // If the token is an end-of-file token
+        if token == &Token::EndOfFile {
+            return false;
+        }
+
+        true
     }
 }
