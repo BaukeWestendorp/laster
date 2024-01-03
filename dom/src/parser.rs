@@ -895,10 +895,6 @@ impl StackOfOpenElements {
         Self { elements: vec![] }
     }
 
-    pub fn len(&self) -> usize {
-        self.elements.len()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
     }
@@ -957,7 +953,7 @@ impl StackOfOpenElements {
             // a failure state.
             for tag_name in tag_names.iter() {
                 if node.is_element_with_tag_name(tag_name) {
-                    return true;
+                    return false;
                 }
             }
 
