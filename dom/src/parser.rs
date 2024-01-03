@@ -1,5 +1,5 @@
 use crate::arena::{NodeArena, NodeId};
-use crate::node::{Node, NodeKind};
+use crate::node::Node;
 use crate::tokenizer::{self, Token};
 
 pub enum Namespace {
@@ -156,7 +156,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             InsertionMode::BeforeHtml => {
                 match token {
                     Token::Doctype => {
-                        todo!("Parse error. Ignore the token.");
+                        self.parser_error("Unexpected DOCTYPE");
                     }
                     Token::Comment => {
                         todo!("Insert a comment as the last child of the Document object.");
@@ -175,7 +175,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         todo!("Act as described in the 'anything else' entry below.");
                     }
                     Token::Tag { .. } if token.is_end_tag() => {
-                        todo!("Parser error. Ignore the token.");
+                        self.parser_error("Unexpected end tag");
                     }
                     _ => {
                         // TODO: Create an html element whose node document is the Document object.
@@ -192,7 +192,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     todo!("Insert a comment.");
                 }
                 Token::Doctype => {
-                    todo!("Parse error. Ignore the token.");
+                    self.parser_error("Unexpected DOCTYPE");
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
                     self.process_token(InsertionMode::InBody, token);
@@ -208,7 +208,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     todo!("Act as described in the 'anything else' entry below.");
                 }
                 Token::Tag { .. } if token.is_end_tag() => {
-                    todo!("Parse error. Ignore the token.");
+                    self.parser_error("Unexpected end tag");
                 }
                 _ => {
                     todo!();
@@ -222,7 +222,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     todo!("Insert a comment.");
                 }
                 Token::Doctype => {
-                    todo!("Parse error. Ignore the token.");
+                    self.parser_error("Unexpected DOCTYPE");
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
                     self.process_token(InsertionMode::InBody, token);
@@ -270,7 +270,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 Token::Tag { .. }
                     if token.is_start_tag_with_name(&["head"]) || token.is_end_tag() =>
                 {
-                    todo!("Parse error. Ignore the token.");
+                    self.parser_error("Unexpected tag");
                 }
                 _ => {
                     // TODO: Pop the current node (which will be the head element) off the stack of
@@ -288,7 +288,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     todo!("Insert a comment.");
                 }
                 Token::Doctype => {
-                    todo!("Parse error. Ignore the token.");
+                    self.parser_error("Unexpected DOCTYPE");
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
                     self.process_token(InsertionMode::InBody, token)
@@ -319,7 +319,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 Token::Tag { .. }
                     if token.is_start_tag_with_name(&["head"]) || token.is_end_tag() =>
                 {
-                    todo!("Parse error. Ignore the token.")
+                    self.parser_error("Unexpected tag");
                 }
                 _ => {
                     self.insert_html_element(&Token::Tag {
@@ -473,7 +473,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         .stack_of_open_elements
                         .has_element_in_button_scope(&self.arena, "p")
                     {
-                        // TODO: then this is a parse error;
+                        // then this is a parse error;
+                        self.parser_error("Expected p element in button scope");
 
                         // insert an HTML element for a "p" start tag token with no attributes.
                         self.insert_html_element(&Token::Tag {
@@ -601,7 +602,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 }
                 Token::EndOfFile => self.stop_parsing(),
                 _ => {
-                    // TODO: Parsing error.
+                    self.parser_error("Unexpected token");
 
                     self.switch_insertion_mode(InsertionMode::InBody);
                 }
@@ -778,9 +779,11 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             .get_node(self.stack_of_open_elements.current_node())
             .is_element_with_tag_name("p")
         {
-            // TODO: Parser error.
+            self.parser_error("Expected current node to be a p element while closing a p element");
         }
 
+        // Pop elements from the stack of open elements until a p element has been
+        // popped from the stack.
         self.stack_of_open_elements
             .pop_until_element_with_tag_name(&self.arena, "p");
     }
@@ -860,6 +863,10 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         }
 
         true
+    }
+
+    fn parser_error(&mut self, message: &str) {
+        eprintln!("Parser error: {}", message);
     }
 }
 
