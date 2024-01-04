@@ -1,7 +1,11 @@
+use std::io::Read;
+
 fn main() {
-    let html = r#"<html><head></head><body><p>Hello, world!</p></body></html>"#;
+    let mut html = String::new();
+    std::io::stdin().read_to_string(&mut html).unwrap();
+
     let mut arena = dom::arena::NodeArena::new();
-    let document = dom::Dom::parse(html, &mut arena);
+    let document = dom::Dom::parse(html.as_str(), &mut arena);
 
     document.dump(&arena);
 }
