@@ -1,5 +1,5 @@
 use crate::arena::{NodeArena, NodeId};
-use crate::node::Node;
+use crate::node::{Node, NodeKind};
 use crate::tokenizer::{self, Token};
 
 pub enum Namespace {
@@ -76,6 +76,7 @@ pub struct Parser<'input, 'arena> {
     should_reprocess_token: bool,
     document: NodeId,
     stack_of_open_elements: StackOfOpenElements,
+    active_formatting_elements: ActiveFormattingElements,
     head_element: Option<NodeId>,
     should_stop_parsing: bool,
     scripting: bool,
@@ -91,6 +92,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             should_reprocess_token: false,
             document: arena.create_node(Node::create_document()),
             stack_of_open_elements: StackOfOpenElements::new(),
+            active_formatting_elements: ActiveFormattingElements::new(),
             head_element: None,
             should_stop_parsing: false,
             scripting: false,
@@ -216,7 +218,13 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             },
             InsertionMode::InHead => match token {
                 whitespace!() => {
-                    todo!("Insert the character");
+                    // Insert the character.
+                    let character = match token {
+                        Token::Character(character) => character,
+                        _ => unreachable!(),
+                    };
+
+                    self.insert_character(*character);
                 }
                 Token::Comment => {
                     todo!("Insert a comment.");
@@ -282,7 +290,12 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             InsertionMode::InHeadNoScript => todo!("InHeadNoScript"),
             InsertionMode::AfterHead => match token {
                 whitespace!() => {
-                    todo!("Insert the character.");
+                    // Insert the character.
+                    let character = match token {
+                        Token::Character(character) => character,
+                        _ => unreachable!(),
+                    };
+                    self.insert_character(*character);
                 }
                 Token::Comment => {
                     todo!("Insert a comment.");
@@ -331,11 +344,39 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 }
             },
             InsertionMode::InBody => match token {
-                Token::Character('\0') => todo!(),
-                whitespace!() => todo!(),
-                Token::Character(_) => todo!(),
+                Token::Character('\0') => {
+                    // Parse error. Ignore the token.
+                    self.error("Unexpected null character");
+                }
+                whitespace!() => {
+                    // Reconstruct the active formatting elements, if any.
+                    self.active_formatting_elements
+                        .reconstruct(&self.stack_of_open_elements);
+
+                    let character = match token {
+                        Token::Character(character) => character,
+                        _ => unreachable!(),
+                    };
+
+                    // Insert the token's character.
+                    self.insert_character(*character);
+                }
+                Token::Character(character) => {
+                    // Reconstruct the active formatting elements, if any.
+                    self.active_formatting_elements
+                        .reconstruct(&self.stack_of_open_elements);
+
+                    // Insert the token's character.
+                    self.insert_character(*character);
+
+                    // Set the frameset-ok flag to "not ok".
+                    self.frameset_ok = false;
+                }
                 Token::Comment => todo!(),
-                Token::Doctype => todo!(),
+                Token::Doctype => {
+                    // Parse error. Ignore the token.
+                    self.error("Unexpected DOCTYPE");
+                }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => todo!(),
                 Token::Tag { .. }
                     if token.is_start_tag_with_name(&[
@@ -602,13 +643,73 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 }
                 Token::EndOfFile => self.stop_parsing(),
                 _ => {
-                    self.error("Unexpected token");
+                    self.error(format!("Unexpected token: {:?}", token).as_str());
 
                     self.switch_insertion_mode(InsertionMode::InBody);
                 }
             },
             InsertionMode::AfterAfterFrameset => todo!("AfterAfterFrameset"),
         }
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#insert-a-character
+    fn insert_character(&mut self, data: char) {
+        // Let the adjusted insertion location be the appropriate place for
+        // inserting a node.
+        let adjusted_insertion_location = self.appropriate_place_for_inserting_node(None);
+
+        // If the adjusted insertion location is in a Document node, then
+        // return.
+        if self
+            .arena
+            .get_node(adjusted_insertion_location.parent)
+            .is_document()
+        {
+            return;
+        }
+
+        // If there is a Text node immediately before the adjusted insertion
+        // location, then append data to that Text node's data.
+        match adjusted_insertion_location.after {
+            Some(after) => {
+                if let Some(previous_sibling) = self.arena.previous_sibling(after) {
+                    if let NodeKind::Text { data: text } =
+                        &mut self.arena.get_node_mut(previous_sibling).kind
+                    {
+                        text.push(data);
+                        return;
+                    }
+                }
+            }
+            None => {
+                if let Some(last_child) = self
+                    .arena
+                    .get_node(adjusted_insertion_location.parent)
+                    .children()
+                    .last()
+                {
+                    if let NodeKind::Text { data: text } =
+                        &mut self.arena.get_node_mut(*last_child).kind
+                    {
+                        text.push(data);
+                        return;
+                    }
+                }
+            }
+        };
+
+        // Otherwise, create a new Text node whose data is data and whose node
+        // document is the same as that of the element in which the adjusted
+        // insertion location finds itself, and insert the newly created node at
+        // the adjusted insertion location.
+        let document = self
+            .arena
+            .get_node(adjusted_insertion_location.parent)
+            .node_document(self.arena);
+
+        let text_node = Node::create_text(document, data.to_string());
+        let text_node_id = self.arena.create_node(text_node);
+        adjusted_insertion_location.insert_element(self.arena, text_node_id);
     }
 
     /// https://html.spec.whatwg.org/multipage/parsing.html#insert-a-foreign-element
@@ -899,6 +1000,10 @@ impl StackOfOpenElements {
         self.elements.is_empty()
     }
 
+    pub fn contains(&self, node: NodeId) -> bool {
+        self.elements.contains(&node)
+    }
+
     /// https://html.spec.whatwg.org/multipage/parsing.html#current-node
     pub fn current_node(&self) -> NodeId {
         *self
@@ -985,5 +1090,72 @@ impl StackOfOpenElements {
         let mut tag_names = Self::ELEMENTS.to_vec();
         tag_names.extend(vec!["html", "table", "template"]);
         self.has_element_in_specific_scope(arena, element, &tag_names)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum FormattingElement {
+    Marker,
+    Element(NodeId),
+}
+
+/// https://html.spec.whatwg.org/multipage/parsing.html#list-of-active-formatting-elements
+#[derive(Debug, Clone, PartialEq)]
+struct ActiveFormattingElements {
+    elements: Vec<FormattingElement>,
+}
+
+impl ActiveFormattingElements {
+    pub fn new() -> Self {
+        Self { elements: vec![] }
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#reconstruct-the-active-formatting-elements
+    pub fn reconstruct(&mut self, open_elements: &StackOfOpenElements) {
+        // If there are no entries in the list of active formatting elements,
+        // then there is nothing to reconstruct; stop this algorithm.
+        if self.elements.is_empty() {
+            return;
+        }
+
+        // If the last (most recently added) entry in the list of active
+        // formatting elements is a marker, or if it is an element that is in
+        // the stack of open elements, then there is nothing to reconstruct;
+        // stop this algorithm.
+        match self.elements.last().unwrap() {
+            FormattingElement::Marker => return,
+            FormattingElement::Element(element) if open_elements.contains(*element) => {
+                return;
+            }
+            _ => {}
+        }
+
+        todo!("Fully implement reconstructing active formatting elements");
+
+        // TODO: Let entry be the last (most recently added) element in the list
+        // of active formatting elements.
+
+        // TODO: Rewind: If there are no entries before entry in the list of
+        // active formatting elements, then jump to the step labeled
+        // create.
+
+        // TODO: Let entry be the entry one earlier than entry in the list of
+        // active formatting elements.
+
+        // TODO: If entry is neither a marker nor an element that is also in the
+        // stack of open elements, go to the step labeled rewind.
+
+        // TODO: Advance: Let entry be the element one later than entry in the
+        // list of active formatting elements.
+
+        // TODO: Create: Insert an HTML element for the token for which the
+        // element entry was created, to obtain new element.
+
+        // TODO: Replace the entry for entry in the list with an entry for new
+        // element.
+
+        // TODO: If the entry for new element in the list of active formatting
+        // elements is not the last entry in the list, return to the step
+        // labeled advance.
     }
 }

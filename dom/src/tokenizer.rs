@@ -216,7 +216,7 @@ impl<'input> Tokenizer<'input> {
                         emit_token!(Token::EndOfFile);
                     }
                     Some(anything_else) => {
-                        self.tokens.push(Token::Character(anything_else));
+                        emit_token!(Token::Character(anything_else));
                     }
                 },
                 State::RcData => todo!("RcData"),

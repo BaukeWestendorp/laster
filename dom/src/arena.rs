@@ -25,7 +25,7 @@ impl NodeArena {
         self.nodes.get_mut(node_id).unwrap()
     }
 
-    pub fn get_node_id(&self, node: &Node) -> usize {
+    pub fn get_node_id(&self, node: &Node) -> NodeId {
         self.nodes.iter().position(|n| n == node).unwrap()
     }
 }
@@ -55,31 +55,118 @@ impl NodeArena {
         node
     }
 
+    pub fn previous_sibling(&self, node: NodeId) -> Option<NodeId> {
+        // FIXME: store previous sibling in node
+        if let Some(parent) = self.nodes[node].parent() {
+            let children = self.nodes[parent].children();
+            let index = children.iter().position(|child| *child == node);
+            if let Some(index) = index {
+                if index > 0 {
+                    return Some(children[index - 1]);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn next_sibling(&self, node: NodeId) -> Option<NodeId> {
+        // FIXME: store previous sibling in node
+        if let Some(parent) = self.nodes[node].parent() {
+            let children = self.nodes[parent].children();
+            let index = children.iter().position(|child| *child == node);
+            if let Some(index) = index {
+                if index < children.len() - 1 {
+                    return Some(children[index + 1]);
+                }
+            }
+        }
+        None
+    }
+
     /// https://dom.spec.whatwg.org/#concept-node-insert
     pub fn insert(&mut self, node: NodeId, into_parent: NodeId, before_child: Option<NodeId>) {
-        // TODO: This is not spec compliant.
+        // TODO: Let nodes be node’s children, if node is a DocumentFragment node;
+        // otherwise « node ».
+        let nodes = vec![node];
 
-        let parent_node = self.get_node_mut(into_parent);
+        // Let count be nodes’s size.
+        let count = nodes.len();
 
-        if let Some(before_child) = before_child {
-            let before_child_index =
-                match parent_node.children.iter().position(|n| *n == before_child) {
-                    Some(before_child_index) => before_child_index,
-                    None => parent_node.children.len() - 1,
-                };
-
-            parent_node.children.insert(before_child_index, node);
-        } else {
-            parent_node.children.push(node);
+        // If count is 0, then return.
+        if count == 0 {
+            return;
         }
 
-        let node = self.get_node_mut(node);
-        node.parent = Some(into_parent);
+        // TODO:  If node is a DocumentFragment node, then:
+
+        // TODO: If child is non-null, then:
+
+        // TODO: Let previousSibling be child’s previous sibling or parent’s last child
+        // if child is null.
+
+        // For each node in nodes, in tree order:
+        for node in nodes.iter() {
+            // Adopt node into parent’s node document.
+            self.adopt(*node, self.get_node(into_parent).node_document(self));
+
+            if let Some(before_child) = before_child {
+                // Otherwise, insert node into parent’s children before child’s
+                // index.
+                let index = self
+                    .get_node_mut(into_parent)
+                    .children
+                    .iter()
+                    .position(|n| *n == before_child)
+                    .unwrap();
+                self.get_node_mut(into_parent).children.insert(index, *node);
+            } else {
+                // If child is null, then append node to parent’s children.
+                self.get_node_mut(into_parent).children.push(*node);
+            }
+
+            // TODO: If parent is a shadow host whose shadow root’s slot
+            // assignment is "named" and node is a slottable, then
+            // assign a slot for node.
+
+            // TODO: If parent’s root is a shadow root, and parent is a slot
+            // whose assigned nodes is the empty list, then run
+            // signal a slot change for parent.
+
+            // TODO: Run assign slottables for a tree with node’s root.
+
+            // TODO: For each shadow-including inclusive descendant
+            // inclusiveDescendant of node, in shadow-including tree order:
+        }
+
+        // TODO: If suppress observers flag is unset, then queue a tree mutation
+        // record for parent with nodes, « », previousSibling, and child.
+
+        // TODO: Run the children changed steps for parent.
     }
 
     /// https://dom.spec.whatwg.org/#concept-node-append
     pub fn append(&mut self, node: NodeId, into_parent: NodeId) -> NodeId {
         // To append a node to a parent, pre-insert node into parent before null.
         self.pre_insert(node, into_parent, None)
+    }
+
+    /// https://dom.spec.whatwg.org/#concept-node-adopt
+    pub fn adopt(&mut self, node: NodeId, document: NodeId) {
+        // Let oldDocument be node’s node document.
+        let old_document = self.get_node(node).node_document(self);
+
+        // TODO: If node’s parent is non-null, then remove node.
+        if self.get_node(node).parent().is_some() {
+            todo!();
+        }
+
+        // If document is not oldDocument, then:
+        if document != old_document {
+            // TODO: This is not spec compliant.
+            let children = self.get_node(node).children().to_vec();
+            for child in children.iter() {
+                self.get_node_mut(*child).document = Some(document);
+            }
+        }
     }
 }

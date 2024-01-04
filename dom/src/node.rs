@@ -10,12 +10,15 @@ pub enum NodeKind {
         local_name: String,
         tag_name: String,
     },
+    Text {
+        data: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     pub kind: NodeKind,
-    document: Option<NodeId>,
+    pub(crate) document: Option<NodeId>,
     pub(crate) children: Vec<NodeId>,
     pub(crate) parent: Option<NodeId>,
 }
@@ -30,7 +33,7 @@ impl Node {
         _is: Option<String>,
         _synchronous_custom_elements: bool,
     ) -> Self {
-        // TODO: This is not spec compliant at all.
+        // TODO: This is not spec compliant.
 
         Self {
             kind: NodeKind::Element {
@@ -41,7 +44,7 @@ impl Node {
             },
             document: Some(document),
             children: vec![],
-            parent: Some(document),
+            parent: None,
         }
     }
 
@@ -55,11 +58,39 @@ impl Node {
         }
     }
 
+    pub fn create_text(document: NodeId, data: String) -> Self {
+        Self {
+            kind: NodeKind::Text { data },
+            document: Some(document),
+            children: vec![],
+            parent: None,
+        }
+    }
+
+    pub fn children(&self) -> &[NodeId] {
+        &self.children
+    }
+
+    pub fn parent(&self) -> Option<NodeId> {
+        self.parent
+    }
+
     pub fn node_document(&self, arena: &NodeArena) -> NodeId {
         match self.document {
             Some(document) => document,
             None => arena.get_node_id(self),
         }
+    }
+
+    pub fn is_document(&self) -> bool {
+        self.kind == NodeKind::Document
+    }
+
+    pub fn is_element(&self) -> bool {
+        if let NodeKind::Element { .. } = &self.kind {
+            return true;
+        }
+        false
     }
 
     pub fn is_element_in_namespace(&self, namespace: Namespace) -> bool {
@@ -87,11 +118,11 @@ impl Node {
         self.internal_dump(arena, 0);
     }
 
-    fn internal_dump(&self, arena: &NodeArena, indent: usize) {
+    fn internal_dump(&self, arena: &NodeArena, indent: NodeId) {
         let indent_string = " ".repeat(indent * 2);
 
         println!("{indent_string}{}", self);
-        for child in &self.children {
+        for child in self.children.iter() {
             let child = arena.get_node(*child);
             child.internal_dump(arena, indent + 1);
         }
@@ -103,6 +134,7 @@ impl std::fmt::Display for Node {
         match &self.kind {
             NodeKind::Document => write!(f, "Document"),
             NodeKind::Element { tag_name, .. } => write!(f, "<{}>", tag_name),
+            NodeKind::Text { data } => write!(f, "#text {}", data),
         }
     }
 }
