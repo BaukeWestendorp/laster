@@ -104,6 +104,8 @@ pub enum Token {
     },
     Doctype {
         name: String,
+        public_identifier: Option<String>,
+        system_identifier: Option<String>,
     },
 }
 
@@ -477,6 +479,8 @@ impl<'input> Tokenizer<'input> {
                                 .unwrap()
                                 .to_ascii_lowercase()
                                 .to_string(),
+                            public_identifier: None,
+                            system_identifier: None,
                         });
                         self.switch_to(State::DoctypeName);
                     }
@@ -492,6 +496,8 @@ impl<'input> Tokenizer<'input> {
                     Some(char) => {
                         self.set_current_token(Token::Doctype {
                             name: char.to_string(),
+                            public_identifier: None,
+                            system_identifier: None,
                         });
                         self.switch_to(State::DoctypeName);
                     }

@@ -144,8 +144,60 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 Token::Comment { .. } => {
                     todo!("Insert a comment as the last child of the Document object.");
                 }
-                Token::Doctype { .. } => {
-                    todo!("Implement DOCTYPE token parsing in initial insertion mode");
+                Token::Doctype {
+                    name,
+                    public_identifier,
+                    system_identifier,
+                } => {
+                    // If the DOCTYPE token's name is not "html", or the token's
+                    // public identifier is not missing, or the token's system
+                    // identifier is neither missing nor "about:legacy-compat",
+                    // then there is a parse error.
+                    if name != "html"
+                        || public_identifier.is_some()
+                        || system_identifier.is_some()
+                            && system_identifier != &Some("about:legacy-compat".to_string())
+                    {
+                        self.error("Invalid DOCTYPE");
+                    }
+
+                    // Append a DocumentType node to the Document node, with its
+                    // name set to the name given in the DOCTYPE token, or the
+                    // empty string if the name was missing; its public ID set
+                    // to the public identifier given in the DOCTYPE token, or
+                    // the empty string if the public identifier was missing;
+                    // and its system ID set to the system identifier given in
+                    // the DOCTYPE token, or the empty string if the system
+                    // identifier was missing.
+                    let doctype = Node::create_doctype(
+                        self.document,
+                        name.clone(),
+                        public_identifier.clone().unwrap_or_default(),
+                        system_identifier.clone().unwrap_or_default(),
+                    );
+                    let doctype = self.arena.create_node(doctype);
+                    self.arena.append(doctype, self.document);
+
+                    // TODO: Then, if the document is not an iframe srcdoc
+                    // document, and the parser cannot
+                    // change the mode flag is false, and
+                    // the DOCTYPE token matches one of the conditions in the
+                    // following list, then set the Document to quirks mode:
+
+                    // TODO: Otherwise, if the document is not an iframe srcdoc
+                    // document, and the parser cannot change the mode flag is
+                    // false, and the DOCTYPE token matches one of the
+                    // conditions in the following list, then then set the
+                    // Document to limited-quirks mode:
+                    //
+                    // The system identifier and public identifier strings must
+                    // be compared to the values given in the lists above in an
+                    // ASCII case-insensitive manner. A system identifier whose
+                    // value is the empty string is not considered missing for
+                    // the purposes of the conditions above.
+
+                    // Then, switch the insertion mode to "before html".
+                    self.switch_insertion_mode(InsertionMode::BeforeHtml);
                 }
                 _ => {
                     // TODO: If the document is not an iframe srcdoc document, then this is a parse

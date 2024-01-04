@@ -13,6 +13,11 @@ pub enum NodeKind {
     Text {
         data: String,
     },
+    DocumentType {
+        name: String,
+        public_id: String,
+        system_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,6 +66,24 @@ impl Node {
     pub fn create_text(document: NodeId, data: String) -> Self {
         Self {
             kind: NodeKind::Text { data },
+            document: Some(document),
+            children: vec![],
+            parent: None,
+        }
+    }
+
+    pub fn create_doctype(
+        document: NodeId,
+        name: String,
+        public_id: String,
+        system_id: String,
+    ) -> Self {
+        Self {
+            kind: NodeKind::DocumentType {
+                name,
+                public_id,
+                system_id,
+            },
             document: Some(document),
             children: vec![],
             parent: None,
@@ -135,6 +158,7 @@ impl std::fmt::Display for Node {
             NodeKind::Document => write!(f, "Document"),
             NodeKind::Element { tag_name, .. } => write!(f, "<{}>", tag_name),
             NodeKind::Text { data } => write!(f, "#text {}", data),
+            NodeKind::DocumentType { name, .. } => write!(f, "<!DOCTYPE {}>", name),
         }
     }
 }
