@@ -298,7 +298,16 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     todo!();
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["meta"]) => {
-                    todo!();
+                    // Insert an HTML element for the token. Immediately pop the
+                    // current node off the stack of open elements.
+                    self.insert_html_element(token);
+                    self.stack_of_open_elements.pop();
+
+                    // TODO: Acknowledge the token's self-closing flag, if it is
+                    // set.
+
+                    // TODO: If the active speculative HTML parser is null,
+                    // then:
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["title"]) => {
                     todo!("Follow the generic RCDATA element parsing algorithm.");
