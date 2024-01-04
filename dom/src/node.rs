@@ -154,10 +154,20 @@ impl Node {
 
 impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let yellow = "\x1b[33m";
+        let white = "\x1b[37m";
+        let reset = "\x1b[0m";
+
         match &self.kind {
             NodeKind::Document => write!(f, "Document"),
-            NodeKind::Element { tag_name, .. } => write!(f, "<{}>", tag_name),
-            NodeKind::Text { data } => write!(f, "#text {}", data),
+            NodeKind::Element { tag_name, .. } => write!(f, "{yellow}<{}>{reset}", tag_name),
+            NodeKind::Text { data } => {
+                let data = data.replace("\r", "\\r");
+                let data = data.replace("\n", "\\n");
+                let data = data.replace("\t", "\\t");
+                let data = data.replace(" ", "\u{00B7}");
+                write!(f, "#text {white}{}{reset}", data.trim())
+            }
             NodeKind::DocumentType { name, .. } => write!(f, "<!DOCTYPE {}>", name),
         }
     }

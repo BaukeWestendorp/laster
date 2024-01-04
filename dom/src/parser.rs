@@ -68,11 +68,18 @@ impl InsertionLocation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParsingAlgorithm {
+    RawText,
+    RcData,
+}
+
 #[derive(Debug)]
 pub struct Parser<'input, 'arena> {
     arena: &'arena mut NodeArena,
     tokenizer: tokenizer::Tokenizer<'input>,
     insertion_mode: InsertionMode,
+    original_insertion_mode: InsertionMode,
     should_reprocess_token: bool,
     document: NodeId,
     stack_of_open_elements: StackOfOpenElements,
@@ -89,6 +96,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         Self {
             tokenizer: tokenizer::Tokenizer::new(html),
             insertion_mode: InsertionMode::Initial,
+            original_insertion_mode: InsertionMode::Initial,
             should_reprocess_token: false,
             document: arena.create_node(Node::create_document()),
             stack_of_open_elements: StackOfOpenElements::new(),
@@ -310,7 +318,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     // then:
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["title"]) => {
-                    todo!("Follow the generic RCDATA element parsing algorithm.");
+                    // Follow the generic RCDATA element parsing algorithm.
+                    self.follow_generic_parsing_algorithm(token, ParsingAlgorithm::RcData);
                 }
                 Token::Tag { .. }
                     if (token.is_start_tag_with_name(&["noscript"]) && self.scripting)
@@ -670,7 +679,42 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 Token::Tag { .. } if token.is_end_tag() => todo!(),
                 _ => unreachable!(),
             },
-            InsertionMode::Text => todo!("Text"),
+            InsertionMode::Text => {
+                match token {
+                    Token::Character(char) => {
+                        // Insert the token's character.
+                        self.insert_character(*char);
+                    }
+                    Token::EndOfFile => {
+                        // Parse error.
+                        self.error("Unexpected end of file");
+
+                        // TODO: If the current node is a script element, then
+                        // set its already started to
+                        // true.
+
+                        // Pop the current node off the stack of open elements.
+                        self.stack_of_open_elements.pop();
+
+                        // Switch the insertion mode to the original insertion
+                        // mode and reprocess the token.
+                        self.switch_insertion_mode_and_reprocess_token(
+                            self.original_insertion_mode,
+                        );
+                    }
+                    Token::Tag { .. } if token.is_end_tag_with_name(&["script"]) => {
+                        todo!();
+                    }
+                    _ => {
+                        // Pop the current node off the stack of open elements.
+                        self.stack_of_open_elements.pop();
+
+                        // Switch the insertion mode to the original insertion
+                        // mode.
+                        self.switch_insertion_mode(self.original_insertion_mode);
+                    }
+                }
+            }
             InsertionMode::InTable => todo!("InTable"),
             InsertionMode::InTableText => todo!("InTableText"),
             InsertionMode::InCaption => todo!("InCaption"),
@@ -711,6 +755,27 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             },
             InsertionMode::AfterAfterFrameset => todo!("AfterAfterFrameset"),
         }
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#parsing-elements-that-contain-only-text
+    fn follow_generic_parsing_algorithm(&mut self, token: &Token, algorithm: ParsingAlgorithm) {
+        // Insert an HTML element for the token.
+        self.insert_html_element(token);
+
+        // If the algorithm that was invoked is the generic raw text element
+        // parsing algorithm, switch the tokenizer to the RAWTEXT state;
+        // otherwise the algorithm invoked was the generic RCDATA element
+        // parsing algorithm, switch the tokenizer to the RCDATA state.
+        match algorithm {
+            ParsingAlgorithm::RawText => self.tokenizer.switch_to(tokenizer::State::RawText),
+            ParsingAlgorithm::RcData => self.tokenizer.switch_to(tokenizer::State::RcData),
+        }
+
+        // Let the original insertion mode be the current insertion mode.
+        self.original_insertion_mode = self.insertion_mode;
+
+        // Then, switch the insertion mode to "text".
+        self.switch_insertion_mode(InsertionMode::Text);
     }
 
     /// https://html.spec.whatwg.org/multipage/parsing.html#insert-a-character

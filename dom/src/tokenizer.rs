@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
+pub enum State {
     Data,
     RcData,
     RawText,
@@ -155,9 +155,15 @@ macro_rules! ascii_upper_alpha {
     };
 }
 
+macro_rules! ascii_lower_alpha {
+    () => {
+        Some('a'..='z')
+    };
+}
+
 macro_rules! ascii_alpha {
     () => {
-        Some('a'..='z') | ascii_upper_alpha!()
+        ascii_lower_alpha!() | ascii_upper_alpha!()
     };
 }
 
@@ -175,6 +181,7 @@ pub struct Tokenizer<'input> {
     tokens: Vec<Token>,
     current_token: Option<Token>,
     insertion_point: usize,
+    temporary_buffer: String,
 }
 
 impl<'input> Tokenizer<'input> {
@@ -186,6 +193,7 @@ impl<'input> Tokenizer<'input> {
             tokens: vec![],
             current_token: None,
             insertion_point: 0,
+            temporary_buffer: String::new(),
         }
     }
 
@@ -194,11 +202,11 @@ impl<'input> Tokenizer<'input> {
     }
 
     pub fn next(&mut self) -> Option<Token> {
-        let mut emitted_token: Option<Token> = None;
+        let mut emitted_tokens: Vec<Token> = vec![];
 
         macro_rules! emit_token {
             ($token:expr) => {
-                emitted_token = Some($token)
+                emitted_tokens.push($token);
             };
         }
 
@@ -211,7 +219,7 @@ impl<'input> Tokenizer<'input> {
             };
         }
 
-        while emitted_token.is_none() {
+        while emitted_tokens.is_empty() {
             match self.state {
                 State::Data => match self.consume_next_input_character() {
                     Some('&') => {
@@ -231,8 +239,38 @@ impl<'input> Tokenizer<'input> {
                         emit_token!(Token::Character(anything_else));
                     }
                 },
-                State::RcData => todo!("RcData"),
-                State::RawText => todo!("RawText"),
+                State::RcData => match self.consume_next_input_character() {
+                    Some('&') => {
+                        self.set_return_state(State::RcData);
+                        self.switch_to(State::CharacterReference);
+                    }
+                    Some('<') => {
+                        self.switch_to(State::RcDataLessThanSign);
+                    }
+                    null!() => {
+                        todo!("This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.");
+                    }
+                    eof!() => {
+                        emit_token!(Token::EndOfFile);
+                    }
+                    Some(anything_else) => {
+                        emit_token!(Token::Character(anything_else));
+                    }
+                },
+                State::RawText => match self.consume_next_input_character() {
+                    Some('<') => {
+                        self.switch_to(State::RawTextLessThanSign);
+                    }
+                    null!() => {
+                        todo!("This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.");
+                    }
+                    eof!() => {
+                        emit_token!(Token::EndOfFile);
+                    }
+                    Some(anything_else) => {
+                        emit_token!(Token::Character(anything_else));
+                    }
+                },
                 State::ScriptData => todo!("ScriptData"),
                 State::PlainText => todo!("PlainText"),
                 State::TagOpen => match self.consume_next_input_character() {
@@ -310,9 +348,73 @@ impl<'input> Tokenizer<'input> {
                         }
                     }
                 },
-                State::RcDataLessThanSign => todo!("RcDataLessThanSign"),
-                State::RcDataEndTagOpen => todo!("RcDataEndTagOpen"),
-                State::RcDataEndTagName => todo!("RcDataEndTagName"),
+                State::RcDataLessThanSign => match self.consume_next_input_character() {
+                    Some('/') => {
+                        self.temporary_buffer = String::new();
+                        self.switch_to(State::RcDataEndTagOpen);
+                    }
+                    _ => {
+                        emit_token!(Token::Character('<'));
+                        self.reconsume_in_state(State::RcData);
+                    }
+                },
+                State::RcDataEndTagOpen => match self.consume_next_input_character() {
+                    ascii_alpha!() => {
+                        self.set_current_token(Token::Tag {
+                            start: false,
+                            tag_name: "".to_string(),
+                            attributes: vec![],
+                        });
+                        self.reconsume_in_state(State::RcDataEndTagName);
+                    }
+                    _ => {
+                        emit_token!(Token::Character('<'));
+                        emit_token!(Token::Character('/'));
+                        self.reconsume_in_state(State::RcData);
+                    }
+                },
+                State::RcDataEndTagName => match self.consume_next_input_character() {
+                    whitespace!() => {
+                        todo!("If the current end tag token is an appropriate end tag token, then switch to the before attribute name state. Otherwise, treat it as per the 'anything else' entry below.");
+                    }
+                    Some('/') => {
+                        if self.current_end_tag_token_is_appropriate() {
+                            self.switch_to(State::SelfClosingStartTag);
+                        } else {
+                            todo!("Otherwise, treat it as per the 'anything else' entry below.");
+                        }
+                    }
+                    Some('>') => {
+                        if self.current_end_tag_token_is_appropriate() {
+                            self.switch_to(State::Data);
+                            emit_current_token!();
+                        } else {
+                            todo!("Otherwise, treat it as per the 'anything else' entry below.");
+                        }
+                    }
+                    ascii_upper_alpha!() => {
+                        let char = self.current_input_character().unwrap();
+                        if let Some(Token::Tag { tag_name, .. }) = &mut self.current_token {
+                            tag_name.push(char.to_ascii_lowercase());
+                        }
+                        self.temporary_buffer.push(char);
+                    }
+                    ascii_lower_alpha!() => {
+                        let char = self.current_input_character().unwrap();
+                        if let Some(Token::Tag { tag_name, .. }) = &mut self.current_token {
+                            tag_name.push(char);
+                        }
+                        self.temporary_buffer.push(char);
+                    }
+                    _ => {
+                        emit_token!(Token::Character('<'));
+                        emit_token!(Token::Character('/'));
+                        for char in self.temporary_buffer.chars() {
+                            emit_token!(Token::Character(char));
+                        }
+                        self.reconsume_in_state(State::RcData);
+                    }
+                },
                 State::RawTextLessThanSign => todo!("RawTextLessThanSign"),
                 State::RawTextEndTagOpen => todo!("RawTextEndTagOpen"),
                 State::RawTextEndTagName => todo!("RawTextEndTagName"),
@@ -580,9 +682,7 @@ impl<'input> Tokenizer<'input> {
             }
         }
 
-        if let Some(emitted_token) = emitted_token {
-            self.tokens.push(emitted_token);
-        }
+        self.tokens.append(&mut emitted_tokens);
 
         self.peek().cloned()
     }
@@ -608,7 +708,7 @@ impl<'input> Tokenizer<'input> {
             })
     }
 
-    fn switch_to(&mut self, state: State) {
+    pub fn switch_to(&mut self, state: State) {
         self.state = state;
     }
 
@@ -633,5 +733,14 @@ impl<'input> Tokenizer<'input> {
 
     fn consume_word(&mut self, word: &str) {
         self.insertion_point += word.len();
+    }
+
+    /// https://html.spec.whatwg.org/multipage/parsing.html#appropriate-end-tag-token
+    fn current_end_tag_token_is_appropriate(&self) -> bool {
+        // TODO: An appropriate end tag token is an end tag token whose tag name
+        // matches the tag name of the last start tag to have been emitted from
+        // this tokenizer, if any. If no start tag has been emitted from this
+        // tokenizer, then no end tag token is appropriate.
+        true
     }
 }
