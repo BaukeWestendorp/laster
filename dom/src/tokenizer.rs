@@ -99,8 +99,12 @@ pub enum Token {
         tag_name: String,
         attributes: Vec<Attribute>,
     },
-    Comment,
-    Doctype,
+    Comment {
+        data: String,
+    },
+    Doctype {
+        name: String,
+    },
 }
 
 impl Token {
@@ -143,9 +147,15 @@ macro_rules! eof {
     };
 }
 
+macro_rules! ascii_upper_alpha {
+    () => {
+        Some('A'..='Z')
+    };
+}
+
 macro_rules! ascii_alpha {
     () => {
-        Some('a'..='z') | Some('A'..='Z')
+        Some('a'..='z') | ascii_upper_alpha!()
     };
 }
 
@@ -422,7 +432,18 @@ impl<'input> Tokenizer<'input> {
                 },
                 State::SelfClosingStartTag => todo!("SelfClosingStartTag"),
                 State::BogusComment => todo!("BogusComment"),
-                State::MarkupDeclarationOpen => todo!("MarkupDeclarationOpen"),
+                State::MarkupDeclarationOpen => {
+                    if self.next_few_input_characters_are("--", false) {
+                        self.consume_word("--");
+                        self.set_current_token(Token::Comment {
+                            data: "".to_string(),
+                        });
+                        self.switch_to(State::CommentStart);
+                    } else if self.next_few_input_characters_are("DOCTYPE", true) {
+                        self.consume_word("DOCTYPE");
+                        self.switch_to(State::Doctype);
+                    }
+                }
                 State::CommentStart => todo!("CommentStart"),
                 State::CommentStartDash => todo!("CommentStartDash"),
                 State::Comment => todo!("Comment"),
@@ -433,10 +454,87 @@ impl<'input> Tokenizer<'input> {
                 State::CommentEndDash => todo!("CommentEndDash"),
                 State::CommentEnd => todo!("CommentEnd"),
                 State::CommentEndBang => todo!("CommentEndBang"),
-                State::Doctype => todo!("Doctype"),
-                State::BeforeDoctypeName => todo!("BeforeDoctypeName"),
-                State::DoctypeName => todo!("DoctypeName"),
-                State::AfterDoctypeName => todo!("AfterDoctypeName"),
+                State::Doctype => match self.consume_next_input_character() {
+                    whitespace!() => {
+                        self.switch_to(State::BeforeDoctypeName);
+                    }
+                    Some('>') => {
+                        self.reconsume_in_state(State::BeforeDoctypeName);
+                    }
+                    eof!() => {
+                        todo!("This is an eof-in-doctype parse error. Create a new DOCTYPE token. Set its force-quirks flag to on. Emit the current token. Emit an end-of-file token.");
+                    }
+                    _ => {
+                        todo!("This is a missing-whitespace-before-doctype-name parse error. Reconsume in the before DOCTYPE name state.");
+                    }
+                },
+                State::BeforeDoctypeName => match self.consume_next_input_character() {
+                    whitespace!() => {}
+                    ascii_upper_alpha!() => {
+                        self.set_current_token(Token::Doctype {
+                            name: self
+                                .current_input_character()
+                                .unwrap()
+                                .to_ascii_lowercase()
+                                .to_string(),
+                        });
+                        self.switch_to(State::DoctypeName);
+                    }
+                    null!() => {
+                        todo!("This is an unexpected-null-character parse error. Create a new DOCTYPE token. Set the token's name to a U+FFFD REPLACEMENT CHARACTER character. Switch to the DOCTYPE name state.");
+                    }
+                    Some('>') => {
+                        todo!("This is a missing-doctype-name parse error. Create a new DOCTYPE token. Set its force-quirks flag to on. Switch to the data state. Emit the current token.")
+                    }
+                    eof!() => {
+                        todo!("This is an eof-in-doctype parse error. Create a new DOCTYPE token. Set its force-quirks flag to on. Emit the current token. Emit an end-of-file token.");
+                    }
+                    Some(char) => {
+                        self.set_current_token(Token::Doctype {
+                            name: char.to_string(),
+                        });
+                        self.switch_to(State::DoctypeName);
+                    }
+                },
+                State::DoctypeName => match self.consume_next_input_character() {
+                    whitespace!() => {
+                        self.switch_to(State::AfterDoctypeName);
+                    }
+                    Some('>') => {
+                        self.switch_to(State::Data);
+                        emit_current_token!();
+                    }
+                    ascii_upper_alpha!() => {
+                        let char = self.current_input_character().unwrap();
+                        if let Some(Token::Doctype { name, .. }) = &mut self.current_token {
+                            name.push(char.to_ascii_lowercase());
+                        }
+                    }
+                    null!() => {
+                        todo!("This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current DOCTYPE token's name.");
+                    }
+                    eof!() => {
+                        todo!("This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.");
+                    }
+                    Some(char) => {
+                        if let Some(Token::Doctype { name, .. }) = &mut self.current_token {
+                            name.push(char);
+                        }
+                    }
+                },
+                State::AfterDoctypeName => match self.consume_next_input_character() {
+                    whitespace!() => {}
+                    Some('>') => {
+                        self.switch_to(State::Data);
+                        emit_current_token!();
+                    }
+                    eof!() => {
+                        todo!("This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.");
+                    }
+                    _ => {
+                        todo!();
+                    }
+                },
                 State::AfterDoctypePublicKeyword => todo!("AfterDoctypePublicKeyword"),
                 State::BeforeDoctypePublicIdentifier => todo!("BeforeDoctypePublicIdentifier"),
                 State::DoctypePublicIdentifierDoubleQuoted => {
@@ -491,6 +589,19 @@ impl<'input> Tokenizer<'input> {
         self.html.chars().nth(self.insertion_point + 1)
     }
 
+    fn next_few_input_characters_are(&self, word: &str, case_sensitive: bool) -> bool {
+        self.html[self.insertion_point..]
+            .chars()
+            .zip(word.chars())
+            .all(|(a, b)| {
+                if case_sensitive {
+                    a == b
+                } else {
+                    a.eq_ignore_ascii_case(&b)
+                }
+            })
+    }
+
     fn switch_to(&mut self, state: State) {
         self.state = state;
     }
@@ -512,5 +623,9 @@ impl<'input> Tokenizer<'input> {
         let char = self.current_input_character();
         self.insertion_point += 1;
         char
+    }
+
+    fn consume_word(&mut self, word: &str) {
+        self.insertion_point += word.len();
     }
 }

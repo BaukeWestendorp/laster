@@ -141,10 +141,10 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         match insertion_mode {
             InsertionMode::Initial => match token {
                 whitespace!() => {}
-                Token::Comment => {
+                Token::Comment { .. } => {
                     todo!("Insert a comment as the last child of the Document object.");
                 }
-                Token::Doctype => {
+                Token::Doctype { .. } => {
                     todo!("Implement DOCTYPE token parsing in initial insertion mode");
                 }
                 _ => {
@@ -157,10 +157,10 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             },
             InsertionMode::BeforeHtml => {
                 match token {
-                    Token::Doctype => {
+                    Token::Doctype { .. } => {
                         self.error("Unexpected DOCTYPE");
                     }
-                    Token::Comment => {
+                    Token::Comment { .. } => {
                         todo!("Insert a comment as the last child of the Document object.");
                     }
                     whitespace!() => {}
@@ -190,10 +190,10 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             }
             InsertionMode::BeforeHead => match token {
                 whitespace!() => {}
-                Token::Comment => {
+                Token::Comment { .. } => {
                     todo!("Insert a comment.");
                 }
-                Token::Doctype => {
+                Token::Doctype { .. } => {
                     self.error("Unexpected DOCTYPE");
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
@@ -226,10 +226,10 @@ impl<'input, 'arena> Parser<'input, 'arena> {
 
                     self.insert_character(*character);
                 }
-                Token::Comment => {
+                Token::Comment { .. } => {
                     todo!("Insert a comment.");
                 }
-                Token::Doctype => {
+                Token::Doctype { .. } => {
                     self.error("Unexpected DOCTYPE");
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
@@ -297,10 +297,10 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     };
                     self.insert_character(*character);
                 }
-                Token::Comment => {
+                Token::Comment { .. } => {
                     todo!("Insert a comment.");
                 }
-                Token::Doctype => {
+                Token::Doctype { .. } => {
                     self.error("Unexpected DOCTYPE");
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
@@ -372,8 +372,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     // Set the frameset-ok flag to "not ok".
                     self.frameset_ok = false;
                 }
-                Token::Comment => todo!(),
-                Token::Doctype => {
+                Token::Comment { .. } => todo!(),
+                Token::Doctype { .. } => {
                     // Parse error. Ignore the token.
                     self.error("Unexpected DOCTYPE");
                 }
@@ -622,8 +622,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             InsertionMode::InTemplate => todo!("InTemplate"),
             InsertionMode::AfterBody => match token {
                 whitespace!() => self.process_token(InsertionMode::InBody, token),
-                Token::Comment => todo!(),
-                Token::Doctype => todo!(),
+                Token::Comment { .. } => todo!(),
+                Token::Doctype { .. } => todo!(),
                 Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
                     self.process_token(InsertionMode::InBody, token);
                 }
@@ -636,8 +636,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             InsertionMode::InFrameset => todo!("InFrameset"),
             InsertionMode::AfterFrameset => todo!("AfterFrameset"),
             InsertionMode::AfterAfterBody => match token {
-                Token::Comment => todo!(),
-                Token::Doctype => todo!(),
+                Token::Comment { .. } => todo!(),
+                Token::Doctype { .. } => todo!(),
                 whitespace!() | Token::Tag { .. } if token.is_start_tag_with_name(&["html"]) => {
                     self.process_token(InsertionMode::InBody, token);
                 }
