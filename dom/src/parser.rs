@@ -298,8 +298,11 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 Token::Tag { .. }
                     if token.is_start_tag_with_name(&["base", "basefont", "bgsound", "link"]) =>
                 {
-                    // TODO: Insert an HTML element for the token. Immediately pop the current node
-                    // off the stack of open elements.
+                    // Insert an HTML element for the token.
+                    self.insert_html_element(token);
+
+                    // Immediately pop the current node off the stack of open elements.
+                    self.stack_of_open_elements.pop();
 
                     // TODO: Acknowledge the token's self-closing flag, if it is set.
 
@@ -409,6 +412,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         start: true,
                         tag_name: "body".to_string(),
                         attributes: vec![],
+                        self_closing: false,
                     });
                     self.switch_insertion_mode_and_reprocess_token(InsertionMode::InBody);
                 }
@@ -592,6 +596,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                             start: true,
                             tag_name: "p".to_string(),
                             attributes: vec![],
+                            self_closing: false,
                         });
                     }
 

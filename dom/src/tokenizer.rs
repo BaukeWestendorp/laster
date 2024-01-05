@@ -98,6 +98,7 @@ pub enum Token {
         start: bool,
         tag_name: String,
         attributes: Vec<Attribute>,
+        self_closing: bool,
     },
     Comment {
         data: String,
@@ -285,6 +286,7 @@ impl<'input> Tokenizer<'input> {
                             start: true,
                             tag_name: "".to_string(),
                             attributes: vec![],
+                            self_closing: false,
                         });
                         self.reconsume_in_state(State::TagName);
                     }
@@ -305,6 +307,7 @@ impl<'input> Tokenizer<'input> {
                                 start: false,
                                 tag_name: "".to_string(),
                                 attributes: vec![],
+                                self_closing: false,
                             });
                             self.reconsume_in_state(State::TagName);
                         }
@@ -364,6 +367,7 @@ impl<'input> Tokenizer<'input> {
                             start: false,
                             tag_name: "".to_string(),
                             attributes: vec![],
+                            self_closing: false,
                         });
                         self.reconsume_in_state(State::RcDataEndTagName);
                     }
@@ -534,7 +538,21 @@ impl<'input> Tokenizer<'input> {
                         todo!("This is a missing-whitespace-between-attributes parse error. Reconsume in the before attribute name state.");
                     }
                 },
-                State::SelfClosingStartTag => todo!("SelfClosingStartTag"),
+                State::SelfClosingStartTag => match self.consume_next_input_character() {
+                    Some('>') => {
+                        if let Some(Token::Tag { self_closing, .. }) = &mut self.current_token {
+                            *self_closing = true;
+                        }
+                        self.switch_to(State::Data);
+                        emit_current_token!();
+                    }
+                    eof!() => {
+                        todo!("This is an eof-in-tag parse error. Emit an end-of-file token.");
+                    }
+                    Some(_) => {
+                        todo!("This is an unexpected-solidus-in-tag parse error. Reconsume in the before attribute name state.");
+                    }
+                },
                 State::BogusComment => todo!("BogusComment"),
                 State::MarkupDeclarationOpen => {
                     if self.next_few_input_characters_are("--", false) {
