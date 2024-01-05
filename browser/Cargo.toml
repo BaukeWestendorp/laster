@@ -10,6 +10,4 @@ edition.workspace = true
 dom = { path = "../dom" }
 fleck = "0.1.1"
 stammer = { git = "https://git.sr.ht/~ma3ke/stammer", branch = "main" }
-pixels = "0.13.0"
-winit = "0.28.0"
-winit_input_helper = "0.14.0"
+nannou = "0.18.1"
