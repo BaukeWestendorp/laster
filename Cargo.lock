@@ -125,9 +125,9 @@ name = "browser"
 version = "0.1.0"
 dependencies = [
  "dom",
- "fleck",
  "nannou",
  "stammer",
+ "stammer_nannou",
 ]
 
 [[package]]
@@ -554,9 +554,9 @@ checksum = "9f6d018fb95a0b59f854aed68ecd96ce2b80af7911b92b1fed3c4b1fa516b91b"
 
 [[package]]
 name = "fleck"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc61658582ff9a6504d845ec46539a737a3474be2b7d49eef95b584ebfa60b91"
+checksum = "f70e06f37ec9679671701b63ca1dc1ebd24932c3a67a4681656b80becf98bb24"
 
 [[package]]
 name = "float_next_after"
@@ -1866,9 +1866,18 @@ dependencies = [
 [[package]]
 name = "stammer"
 version = "0.1.0"
-source = "git+https://git.sr.ht/~ma3ke/stammer?branch=main#39412553917d101e94f4d6d7976f2b2aebc4b5e9"
+source = "git+https://git.sr.ht/~ma3ke/stammer?branch=main#95b99a5699da77757ad730303501b2e748c5baaf"
 dependencies = [
  "fleck",
+]
+
+[[package]]
+name = "stammer_nannou"
+version = "0.1.0"
+source = "git+https://github.com/BaukeWestendorp/stammer_nannou?branch=main#f373b70e7e61426432c1fc99239bdfefb33bfbdf"
+dependencies = [
+ "nannou",
+ "stammer",
 ]
 
 [[package]]

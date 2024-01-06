@@ -1,28 +1,18 @@
 #![feature(array_chunks)]
 
-use nannou::{image, prelude::*};
+use nannou::prelude::*;
 
 use std::io::Read;
 use std::rc::Rc;
 
 use dom::arena::NodeArena;
 use dom::node::{Node, NodeKind};
-use fleck::Font;
 use stammer::elements::builder::ElementBuilder;
 use stammer::elements::{Element, SizingStrategy};
 use stammer::Panel;
 
-fn load_font(path: &str) -> std::io::Result<Font> {
-    let mut file = std::fs::File::open(path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-    assert_eq!(buffer.len(), fleck::FILE_SIZE);
-    let font = Font::new(buffer.as_slice().try_into().unwrap());
-    Ok(font)
-}
-
 fn dom_node_as_stammer_element(
-    font: Rc<Font>,
+    font: Rc<stammer::Font>,
     node: &Node,
     arena: &mut NodeArena,
 ) -> Element<Data> {
@@ -91,7 +81,7 @@ fn model(app: &App) -> Model {
     let body = get_body(&mut arena, &document);
 
     let font_path = "/etc/tid/fonts/times15.uf2".to_string();
-    let font = match load_font(&font_path) {
+    let font = match stammer::Font::load_from_file(&font_path) {
         Ok(font) => font,
         Err(err) => {
             eprintln!("ERROR: Failed to load font from {font_path:?}: {err}");
@@ -122,27 +112,7 @@ fn model(app: &App) -> Model {
     let window = app.new_window().size(512, 512).view(view).build().unwrap();
     let window = app.window(window).unwrap();
 
-    let mut pixels = [state.background; 512 * 512].concat().to_vec();
-
-    state.draw(&mut pixels);
-
-    let buffer = image::ImageBuffer::from_fn(512, 512, |x, y| {
-        let index = (y * 512 + x) as usize;
-        let pixel = [
-            pixels[index * 4],
-            pixels[index * 4 + 1],
-            pixels[index * 4 + 2],
-            pixels[index * 4 + 3],
-        ];
-        image::Rgba(pixel)
-    });
-
-    let texture = wgpu::Texture::load_from_image_buffer(
-        window.device(),
-        window.queue(),
-        wgpu::TextureUsages::TEXTURE_BINDING,
-        &buffer,
-    );
+    let texture = stammer_nannou::panel_to_texture(&state, &window);
 
     Model { texture }
 }

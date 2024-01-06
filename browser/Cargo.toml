@@ -4,10 +4,8 @@ version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 dom = { path = "../dom" }
-fleck = "0.1.1"
 stammer = { git = "https://git.sr.ht/~ma3ke/stammer", branch = "main" }
 nannou = "0.18.1"
+stammer_nannou = { git = "https://github.com/BaukeWestendorp/stammer_nannou", branch = "main" }
