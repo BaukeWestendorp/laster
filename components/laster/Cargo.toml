@@ -1,11 +1,11 @@
 [package]
-name = "browser"
+name = "laster"
 version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 
 [dependencies]
-dom = { path = "../dom" }
+zaailing = { path = "../zaailing" }
 stammer = { git = "https://git.sr.ht/~ma3ke/stammer", branch = "main" }
 nannou = "0.18.1"
 stammer_nannou = { git = "https://github.com/BaukeWestendorp/stammer_nannou", branch = "main" }

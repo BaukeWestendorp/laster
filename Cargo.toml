@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-  "laster",
-  "zaailing",
+  "components/laster",
+  "components/zaailing",
 ]
 
 [workspace.package]

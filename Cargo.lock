@@ -121,16 +121,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
 
 [[package]]
-name = "browser"
-version = "0.1.0"
-dependencies = [
- "dom",
- "nannou",
- "stammer",
- "stammer_nannou",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -514,10 +504,6 @@ checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
  "libloading 0.8.1",
 ]
-
-[[package]]
-name = "dom"
-version = "0.1.0"
 
 [[package]]
 name = "downcast-rs"
@@ -910,6 +896,16 @@ checksum = "8c2352bd1d0bceb871cb9d40f24360c8133c11d7486b68b5381c1dd1a32015e3"
 dependencies = [
  "libc",
  "libloading 0.7.4",
+]
+
+[[package]]
+name = "laster"
+version = "0.1.0"
+dependencies = [
+ "nannou",
+ "stammer",
+ "stammer_nannou",
+ "zaailing",
 ]
 
 [[package]]
@@ -2439,6 +2435,10 @@ name = "xml-rs"
 version = "0.8.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fcb9cbac069e033553e8bb871be2fbdffcab578eb25bd0f7c508cedc6dcd75a"
+
+[[package]]
+name = "zaailing"
+version = "0.1.0"
 
 [[package]]
 name = "zerocopy"
