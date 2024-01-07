@@ -542,7 +542,30 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 Token::Tag { .. }
                     if token.is_start_tag_with_name(&["h1", "h2", "h3", "h4", "h5", "h6"]) =>
                 {
-                    todo!()
+                    // If the stack of open elements has a p element in button
+                    // scope, then close a p element.
+                    if self
+                        .stack_of_open_elements
+                        .has_element_in_button_scope(&self.arena, "p")
+                    {
+                        self.close_p_element();
+                    }
+
+                    // If the current node is an HTML element whose tag name is
+                    // one of "h1", "h2", "h3", "h4", "h5", or "h6", then this
+                    // is a parse error; pop the current node off the stack of
+                    // open elements.
+                    if self
+                        .arena
+                        .get_node(self.stack_of_open_elements.current_node())
+                        .is_element_with_one_of_tag_names(&["h1", "h2", "h3", "h4", "h5", "h6"])
+                    {
+                        self.error("Unexpected tag");
+                        self.stack_of_open_elements.pop();
+                    }
+
+                    // Insert an HTML element for the token.
+                    self.insert_html_element(token);
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["pre", "listing"]) => todo!(),
                 Token::Tag { .. } if token.is_start_tag_with_name(&["form"]) => todo!(),
