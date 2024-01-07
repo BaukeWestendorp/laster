@@ -45,7 +45,7 @@ enum InsertionMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct InsertionLocation {
     parent: NodeId,
-    after: Option<NodeId>,
+    after_child: Option<NodeId>,
 }
 
 impl InsertionLocation {
@@ -59,7 +59,7 @@ impl InsertionLocation {
         // element's relevant agent's custom element reactions stack.
 
         // Insert element at the adjusted insertion location.
-        arena.insert(element, self.parent, self.after)
+        arena.insert(element, self.parent, self.after_child)
 
         // TODO: If the parser was not created as part of the HTML fragment
         // parsing algorithm, then pop the element queue from element's
@@ -672,7 +672,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         "strong", "tt", "u",
                     ]) =>
                 {
-                    todo!()
+                    // Run the adoption agency algorithm for the token.
+                    self.run_adoption_agency_algorithm(token);
                 }
                 Token::Tag { .. }
                     if token.is_start_tag_with_name(&["applet", "marquee", "object"]) =>
@@ -808,6 +809,243 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         }
     }
 
+    /// https://html.spec.whatwg.org/multipage/parsing.html#adoption-agency-algorithm
+    fn run_adoption_agency_algorithm(&mut self, token: &Token) {
+        // 1. Let subject be token's tag name.
+        let subject = match token {
+            Token::Tag { tag_name, .. } => tag_name,
+            _ => panic!("Expected tag token"),
+        };
+
+        // If the current node is an HTML element whose tag name is subject, and the
+        // current node is not in the list of active formatting elements, then pop the
+        // current node off the stack of open elements and return.
+        let current_node = self.stack_of_open_elements.current_node();
+        if self
+            .arena
+            .get_node(current_node)
+            .is_element_with_tag_name(&subject)
+            && !self.active_formatting_elements.contains(current_node)
+        {
+            self.stack_of_open_elements.pop();
+            return;
+        }
+
+        // Let outer loop counter be 0.
+        let mut outer_loop_counter = 0;
+
+        // While true:
+        loop {
+            // If outer loop counter is greater than or equal to 8, then return.
+            if outer_loop_counter >= 8 {
+                return;
+            }
+
+            // Increment outer loop counter by 1.
+            outer_loop_counter += 1;
+
+            // Let formatting element be the last element in the list of active
+            // formatting elements that:
+            //     * is between the end of the list and the last marker in the list, if any,
+            //       or the start of the list otherwise, and
+            //     * has the tag name subject.
+            let formatting_element = self
+                .active_formatting_elements
+                .last_element_with_tag_name_before_marker(&self.arena, &subject);
+
+            // If there is no such element, then return and instead act as described in the
+            // "any other end tag" entry above.
+            if formatting_element.is_none() {
+                todo!();
+            }
+            let formatting_element = formatting_element.unwrap();
+
+            // If formatting element is not in the stack of open elements,
+            if !self.stack_of_open_elements.contains(formatting_element) {
+                // then this is a parse error;
+                self.error("Formatting element not in the stack of open elements");
+                // remove the element from the list
+                self.active_formatting_elements.remove(formatting_element);
+                // and return.
+                return;
+            }
+
+            // If formatting element is in the stack of open elements, but the element
+            // is not in scope,
+            let formatting_element_tag_name = match &self.arena.get_node(formatting_element).kind {
+                NodeKind::Element { tag_name, .. } => tag_name,
+                _ => panic!("Formatting element is not an element"),
+            };
+            if !self
+                .stack_of_open_elements
+                .has_element_in_scope(&self.arena, &formatting_element_tag_name)
+            {
+                // then this is a parse error; return.
+                self.error("Formatting element is not in scope");
+                return;
+            }
+
+            // If formatting element is not the current node,
+            if formatting_element != self.stack_of_open_elements.current_node() {
+                // this is a parse error. (But do not return.)
+                self.error("Formatting element is not the current node");
+            }
+
+            // Let furthest block be the topmost node in the stack of open elements that
+            // is lower in the stack than formatting element, and is an element in the
+            // special category. There might not be one.
+            let furthest_block = self
+                .stack_of_open_elements
+                .topmost_special_node_below(&self.arena, formatting_element);
+
+            // If there is no furthest block, then the UA must first pop all the nodes
+            // from the bottom of the stack of open elements, from the current node up to
+            // and including formatting element,
+            if furthest_block.is_none() {
+                while formatting_element != self.stack_of_open_elements.current_node() {
+                    self.stack_of_open_elements.pop();
+                }
+                self.stack_of_open_elements.pop();
+
+                // then remove formatting element from the list of active formatting elements,
+                self.active_formatting_elements.remove(formatting_element);
+                // and finally return.
+                return;
+            }
+            let furthest_block = furthest_block.unwrap();
+
+            // Let common ancestor be the element immediately above formatting element
+            // in the stack of open elements.
+            let common_ancestor = self
+                .stack_of_open_elements
+                .element_immediately_above(formatting_element);
+
+            // Let a bookmark note the position of formatting element in the list of
+            // active formatting elements relative to the elements on either side of it in
+            // the list.
+            let mut bookmark = self
+                .active_formatting_elements
+                .first_index_of(formatting_element)
+                .unwrap();
+
+            // Let node and last node be furthest block.
+            let mut node = furthest_block;
+            let mut last_node = furthest_block;
+
+            let node_above_node = self.stack_of_open_elements.element_immediately_above(node);
+
+            // Let inner loop counter be 0.
+            let mut inner_loop_count = 0;
+
+            // While true:
+            loop {
+                // Increment inner loop counter by 1.
+                inner_loop_count += 1;
+
+                // Let node be the element immediately above node in the stack of open
+                // elements, or if node is no longer in the stack of open elements (e.g. because
+                // it got removed by this algorithm), the element that was immediately above
+                // node in the stack of open elements before node was removed.
+                if let Some(node_above_node) = node_above_node {
+                    node = node_above_node;
+                }
+
+                // If node is formatting element, then break.
+                if node == formatting_element {
+                    break;
+                }
+
+                // If inner loop counter is greater than 3 and node is in the list of
+                // active formatting elements, then remove node from the list of active
+                // formatting elements.
+                if inner_loop_count > 3 && self.active_formatting_elements.contains(node) {
+                    self.active_formatting_elements.remove(node);
+                }
+
+                // If node is not in the list of active formatting elements, then remove
+                // node from the stack of open elements and continue.
+                if !self.active_formatting_elements.contains(node) {
+                    self.stack_of_open_elements.remove_element(node);
+                    continue;
+                }
+
+                // Create an element for the token for which the element node was
+                // created, in the HTML namespace, with common ancestor as the intended parent;
+                let new_element =
+                    self.create_element_for_token(token, Namespace::Html, common_ancestor.unwrap());
+
+                // replace the entry for node in the list of active
+                // formatting elements with an entry for the new element,
+                self.active_formatting_elements.replace(node, new_element);
+
+                // replace the entry for node in the stack of open elements
+                // with an entry for the new element,
+                self.stack_of_open_elements.replace(node, new_element);
+
+                // and let node be the new element.
+                node = new_element;
+
+                // If last node is furthest block, then move the aforementioned bookmark
+                // to be immediately after the new node in the list of active formatting
+                // elements.
+                if last_node == furthest_block {
+                    bookmark = self
+                        .active_formatting_elements
+                        .first_index_of(node)
+                        .unwrap()
+                        + 1
+                }
+
+                // Append last node to node.
+                self.arena.append(last_node, node);
+
+                // Set last node to node.
+                last_node = node;
+            }
+
+            // Insert whatever last node ended up being in the previous step at the
+            // appropriate place for inserting a node, but using common ancestor as the
+            // override target.
+            let adjusted_insertion_location =
+                self.appropriate_place_for_inserting_node(common_ancestor);
+            self.arena.insert(
+                last_node,
+                adjusted_insertion_location.parent,
+                adjusted_insertion_location.after_child,
+            );
+
+            // Create an element for the token for which formatting element was created,
+            // in the HTML namespace, with furthest block as the intended parent.
+            let new_element = self.create_element_for_token(token, Namespace::Html, furthest_block);
+
+            // Take all of the child nodes of furthest block and append them to the
+            // element created in the last step.
+            let children = self.arena.get_node(furthest_block).children().to_vec();
+            for child in children.iter() {
+                self.arena.append(*child, new_element);
+            }
+
+            // Append that new element to furthest block.
+            self.arena.append(new_element, furthest_block);
+
+            // Remove formatting element from the list of active formatting elements,
+            self.active_formatting_elements.remove(formatting_element);
+            // and insert the new element into the list of active formatting elements at the
+            // position of the aforementioned bookmark.
+            self.active_formatting_elements
+                .insert(bookmark, new_element);
+
+            // Remove formatting element from the stack of open elements,
+            self.stack_of_open_elements
+                .remove_element(formatting_element);
+
+            // and insert the new element into the stack of open elements immediately below
+            // the position of furthest block in that stack.
+            self.stack_of_open_elements
+                .insert_immediately_below(new_element, furthest_block);
+        }
+    }
+
     /// https://html.spec.whatwg.org/multipage/parsing.html#parsing-elements-that-contain-only-text
     fn follow_generic_parsing_algorithm(&mut self, token: &Token, algorithm: ParsingAlgorithm) {
         // Insert an HTML element for the token.
@@ -847,7 +1085,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
 
         // If there is a Text node immediately before the adjusted insertion
         // location, then append data to that Text node's data.
-        match adjusted_insertion_location.after {
+        match adjusted_insertion_location.after_child {
             Some(after) => {
                 if let Some(previous_sibling) = self.arena.previous_sibling(after) {
                     if let NodeKind::Text { data: text } =
@@ -1034,7 +1272,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             // any).
             InsertionLocation {
                 parent: target,
-                after: None,
+                after_child: None,
             }
         };
 
@@ -1148,6 +1386,122 @@ impl<'input, 'arena> Parser<'input, 'arena> {
     }
 }
 
+pub static SPECIAL_TAGS: &[&str] = &[
+    "address",
+    "applet",
+    "area",
+    "article",
+    "aside",
+    "base",
+    "basefont",
+    "bgsound",
+    "blockquote",
+    "body",
+    "br",
+    "button",
+    "caption",
+    "center",
+    "col",
+    "colgroup",
+    "dd",
+    "details",
+    "dir",
+    "div",
+    "dl",
+    "dt",
+    "embed",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "frame",
+    "frameset",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "head",
+    "header",
+    "hgroup",
+    "hr",
+    "html",
+    "iframe",
+    "img",
+    "input",
+    "keygen",
+    "li",
+    "link",
+    "listing",
+    "main",
+    "marquee",
+    "menu",
+    "meta",
+    "nav",
+    "noembed",
+    "noframes",
+    "noscript",
+    "object",
+    "ol",
+    "p",
+    "param",
+    "plaintext",
+    "pre",
+    "script",
+    "search",
+    "section",
+    "select",
+    "source",
+    "style",
+    "summary",
+    "table",
+    "tbody",
+    "td",
+    "template",
+    "textarea",
+    "tfoot",
+    "th",
+    "thead",
+    "title",
+    "tr",
+    "track",
+    "ul",
+    "wbr",
+    "xmp",
+    // FIXME: Implement MathML mi
+    // FIXME: Implement MathML mo
+    // FIXME: Implement MathML mn
+    // FIXME: Implement MathML ms
+    // FIXME: Implement MathML mtext
+    // FIXME: Implement MathML annotation-xml
+    // FIXME: Implement SVG foreignObject
+    // FIXME: Implement SVG desc
+    // FIXME: Implement SVG title
+];
+
+pub static BASE_SCOPE_TAGS: &[&str] = &[
+    "applet",
+    "caption",
+    "html",
+    "table",
+    "td",
+    "th",
+    "marquee",
+    "object",
+    "template",
+    "mi",
+    "mo",
+    "mn",
+    "ms",
+    "mtext",
+    "annotation-xml",
+    "foreignObject",
+    "desc",
+    "title",
+];
+
 /// https://html.spec.whatwg.org/multipage/parsing.html#the-stack-of-open-elements
 #[derive(Debug, Clone, PartialEq)]
 struct StackOfOpenElements {
@@ -1155,20 +1509,6 @@ struct StackOfOpenElements {
 }
 
 impl StackOfOpenElements {
-    const ELEMENTS: [&'static str; 9] = [
-        "applet", "caption", "html", "table", "td", "th", "marquee", "object",
-        "template",
-        // TODO: MathML mi
-        // TODO: MathML mo
-        // TODO: MathML mn
-        // TODO: MathML ms
-        // TODO: MathML mtext
-        // TODO: MathML annotation-xml
-        // TODO: SVG foreignObject
-        // TODO: SVG desc
-        // TODO: SVG title
-    ];
-
     pub fn new() -> Self {
         Self { elements: vec![] }
     }
@@ -1248,25 +1588,77 @@ impl StackOfOpenElements {
         unreachable!()
     }
 
+    pub fn has_element_in_scope(&self, arena: &NodeArena, element: &str) -> bool {
+        self.has_element_in_specific_scope(arena, element, &BASE_SCOPE_TAGS)
+    }
+
     /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-list-scope
     pub fn has_element_in_list_scope(&self, arena: &NodeArena, element: &str) -> bool {
-        let mut tag_names = Self::ELEMENTS.to_vec();
-        tag_names.extend(vec!["ol", "ul"]);
-        self.has_element_in_specific_scope(arena, element, &tag_names)
+        self.has_element_in_specific_scope(
+            arena,
+            element,
+            &[BASE_SCOPE_TAGS, &["ol", "ul"]].concat(),
+        )
     }
 
     /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-button-scope
     pub fn has_element_in_button_scope(&self, arena: &NodeArena, element: &str) -> bool {
-        let mut tag_names = Self::ELEMENTS.to_vec();
-        tag_names.extend(vec!["button"]);
-        self.has_element_in_specific_scope(arena, element, &tag_names)
+        self.has_element_in_specific_scope(arena, element, &[BASE_SCOPE_TAGS, &["button"]].concat())
     }
 
     /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-table-scope
     pub fn has_element_in_table_scope(&self, arena: &NodeArena, element: &str) -> bool {
-        let mut tag_names = Self::ELEMENTS.to_vec();
-        tag_names.extend(vec!["html", "table", "template"]);
-        self.has_element_in_specific_scope(arena, element, &tag_names)
+        self.has_element_in_specific_scope(
+            arena,
+            element,
+            &[BASE_SCOPE_TAGS, &["html", "table", "template"]].concat(),
+        )
+    }
+
+    pub fn insert_immediately_below(&mut self, element: NodeId, target: NodeId) {
+        if let Some(index) = self.elements.iter().position(|e| e == &target) {
+            self.elements.insert(index + 1, element);
+        }
+    }
+
+    pub fn replace(&mut self, target: NodeId, replacement: NodeId) {
+        if let Some(index) = self.elements.iter().position(|e| e == &target) {
+            self.elements[index] = replacement;
+        }
+    }
+
+    pub fn remove_element(&mut self, element: NodeId) {
+        if let Some(index) = self.elements.iter().position(|e| e == &element) {
+            self.elements.remove(index);
+        }
+    }
+
+    pub fn element_immediately_above(&self, target: NodeId) -> Option<NodeId> {
+        let mut found = false;
+        for element in self.elements.iter().rev() {
+            if *element == target {
+                found = true;
+            } else if found {
+                return Some(*element);
+            }
+        }
+        None
+    }
+
+    pub fn topmost_special_node_below(&self, arena: &NodeArena, target: NodeId) -> Option<NodeId> {
+        let mut best = None;
+        for element in self.elements.iter().rev() {
+            if *element == target {
+                break;
+            }
+            if arena
+                .get_node(*element)
+                .is_element_with_one_of_tag_names(&SPECIAL_TAGS)
+            {
+                best = Some(*element);
+            }
+        }
+        best
     }
 }
 
@@ -1274,6 +1666,12 @@ impl StackOfOpenElements {
 enum ActiveFormattingElement {
     Marker,
     Element(NodeId),
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum FormattingElementPosition {
+    End,
+    LastMarkerOrElseStart,
 }
 
 /// https://html.spec.whatwg.org/multipage/parsing.html#list-of-active-formatting-elements
@@ -1338,5 +1736,104 @@ impl ActiveFormattingElements {
 
     pub fn push(&mut self, element: ActiveFormattingElement) {
         self.elements.push(element);
+    }
+
+    pub fn first_index_of(&self, target: NodeId) -> Option<usize> {
+        self.elements
+            .iter()
+            .position(|e| *e == ActiveFormattingElement::Element(target))
+    }
+
+    pub fn replace(&mut self, target: NodeId, replacement: NodeId) {
+        if let Some(index) = self
+            .elements
+            .iter()
+            .position(|e| *e == ActiveFormattingElement::Element(target))
+        {
+            self.elements[index] = ActiveFormattingElement::Element(replacement);
+        }
+    }
+
+    pub fn insert(&mut self, index: usize, element: NodeId) {
+        self.elements
+            .insert(index, ActiveFormattingElement::Element(element));
+    }
+
+    pub fn remove(&mut self, element: NodeId) {
+        if let Some(index) = self
+            .elements
+            .iter()
+            .position(|e| *e == ActiveFormattingElement::Element(element))
+        {
+            self.elements.remove(index);
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    pub fn last_element_with_tag_name_before_marker(
+        &self,
+        arena: &NodeArena,
+        tag_name: &str,
+    ) -> Option<NodeId> {
+        for element in self.elements.iter().rev() {
+            if matches!(element, ActiveFormattingElement::Marker) {
+                break;
+            }
+            if let ActiveFormattingElement::Element(element) = element {
+                if arena.get_node(*element).is_element_with_tag_name(tag_name) {
+                    return Some(*element);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn contains(&self, target: NodeId) -> bool {
+        self.elements.iter().any(|element| {
+            if let ActiveFormattingElement::Element(element) = element {
+                return *element == target;
+            }
+            false
+        })
+    }
+
+    pub fn contains_element_between(
+        &self,
+        arena: &NodeArena,
+        start: FormattingElementPosition,
+        end: FormattingElementPosition,
+        tag_name: &str,
+    ) -> bool {
+        if let Some(start) = self.index_from_position(start) {
+            if let Some(end) = self.index_from_position(end) {
+                for i in start..end {
+                    if let Some(ActiveFormattingElement::Element(element)) = self.elements.get(i) {
+                        if arena
+                            .get_node(*element)
+                            .is_element_with_one_of_tag_names(&[tag_name])
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn index_from_position(&self, position: FormattingElementPosition) -> Option<usize> {
+        match position {
+            FormattingElementPosition::End => Some(self.len().saturating_sub(1)),
+            FormattingElementPosition::LastMarkerOrElseStart => self
+                .elements
+                .iter()
+                .rev()
+                .enumerate()
+                .find(|(_, element)| matches!(element, ActiveFormattingElement::Marker))
+                .map(|element| element.0),
+        }
     }
 }
