@@ -569,11 +569,65 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["pre", "listing"]) => todo!(),
                 Token::Tag { .. } if token.is_start_tag_with_name(&["form"]) => todo!(),
-                Token::Tag { .. } if token.is_start_tag_with_name(&["li"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["li"]) => {
+                    // Set the frameset-ok flag to "not ok".
+                    self.frameset_ok = false;
+
+                    // Initialize node to be the current node (the bottommost node of the stack).
+                    for node in self.stack_of_open_elements.elements.iter().rev() {
+                        let node = self.arena.get_node(*node);
+
+                        // Loop: If node is an li element, then run these substeps:
+                        if node.is_element_with_tag_name("li") {
+                            //  Generate implied end tags, except for li elements.
+                            self.generate_implied_end_tags_except_for(Some("li"));
+                            // If the current node is not an li element, then this is a parse
+                            // error.
+                            if !self
+                                .arena
+                                .get_node(self.stack_of_open_elements.current_node())
+                                .is_element_with_tag_name("li")
+                            {
+                                self.error("Expected li element");
+                            }
+                            // Pop elements from the stack of open elements until an li element
+                            // has been popped from the stack.
+                            self.stack_of_open_elements
+                                .pop_until_element_with_tag_name(&self.arena, "li");
+
+                            // Jump to the step labeled done below.
+                            break;
+                        }
+
+                        // If node is in the special category, but is not an address, div, or p
+                        //    element, then jump to the step labeled done below.
+                        if node.is_element_with_one_of_tag_names(SPECIAL_TAGS)
+                            && !node.is_element_with_one_of_tag_names(&["address", "div", "p"])
+                        {
+                            break;
+                        }
+
+                        // Otherwise, set node to the previous entry in the
+                        //    stack of open elements and return to the step
+                        //    labeled loop.
+                    }
+
+                    // Done: If the stack of open elements has a p element in button scope, then
+                    //    close a p element.
+                    if self
+                        .stack_of_open_elements
+                        .has_element_in_button_scope(&self.arena, "p")
+                    {
+                        self.close_p_element();
+                    }
+
+                    // Finally, insert an HTML element for the token.
+                    self.insert_html_element(token);
+                }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["dd", "dt"]) => todo!(),
                 Token::Tag { .. } if token.is_start_tag_with_name(&["plaintext"]) => todo!(),
                 Token::Tag { .. } if token.is_start_tag_with_name(&["button"]) => todo!(),
-                Token::Tag { .. }
+                Token::Tag { tag_name, .. }
                     if token.is_end_tag_with_name(&[
                         "address",
                         "article",
@@ -604,7 +658,25 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         "ul",
                     ]) =>
                 {
-                    todo!()
+                    // TODO: If the stack of open elements does not have an
+                    // element in scope that is an HTML element with the same
+                    // tag name as that of the token, then this is a parse
+                    // error; ignore the token.
+
+                    // Otherwise, run these steps:
+
+                    // Generate implied end tags.
+                    self.generate_implied_end_tags_except_for(None);
+
+                    // TODO: If the current node is not an HTML element with the
+                    // same tag name as that of the token,
+                    // then this is a parse error.
+
+                    // Pop elements from the stack of open elements until an
+                    // HTML element with the same tag name as the token has been
+                    // popped from the stack.
+                    self.stack_of_open_elements
+                        .pop_until_element_with_tag_name(&self.arena, tag_name)
                 }
                 Token::Tag { .. } if token.is_end_tag_with_name(&["form"]) => todo!(),
                 Token::Tag { .. } if token.is_end_tag_with_name(&["p"]) => {
@@ -673,9 +745,9 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     self.active_formatting_elements
                         .reconstruct(&self.stack_of_open_elements);
 
-                    // Insert an HTML element for the token. Push onto the list
-                    // of active formatting elements that element.
+                    // Insert an HTML element for the token.
                     let element = self.insert_html_element(token);
+                    // Push onto the list of active formatting elements that element.
                     self.active_formatting_elements
                         .push(ActiveFormattingElement::Element(element));
                 }
@@ -685,7 +757,15 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         "tt", "u",
                     ]) =>
                 {
-                    todo!()
+                    // Reconstruct the active formatting elements, if any.
+                    self.active_formatting_elements
+                        .reconstruct(&self.stack_of_open_elements);
+
+                    // Insert an HTML element for the token
+                    let element = self.insert_html_element(token);
+                    // Push onto the list of active formatting elements that element.
+                    self.active_formatting_elements
+                        .push(ActiveFormattingElement::Element(element));
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["nobr"]) => todo!(),
                 Token::Tag { .. }
@@ -714,7 +794,20 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                         "area", "br", "embed", "img", "keygen", "wbr",
                     ]) =>
                 {
-                    todo!()
+                    // Reconstruct the active formatting elements, if any.
+                    self.active_formatting_elements
+                        .reconstruct(&self.stack_of_open_elements);
+
+                    // Insert an HTML element for the token.
+                    self.insert_html_element(token);
+                    // Immediately pop the current node off the stack of open elements.
+                    self.stack_of_open_elements.pop();
+
+                    // Acknowledge the token's self-closing flag, if it is set.
+                    token.acknowledge_self_closing_flag();
+
+                    // Set the frameset-ok flag to "not ok".
+                    self.frameset_ok = false;
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["input"]) => todo!(),
                 Token::Tag { .. }
@@ -749,8 +842,64 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 {
                     todo!()
                 }
-                Token::Tag { .. } if token.is_start_tag() => todo!(),
-                Token::Tag { .. } if token.is_end_tag() => todo!(),
+                Token::Tag { .. } if token.is_start_tag() => {
+                    // Reconstruct the active formatting elements, if any.
+                    self.active_formatting_elements
+                        .reconstruct(&self.stack_of_open_elements);
+
+                    // Insert an HTML element for the token.
+                    self.insert_html_element(token);
+                }
+                Token::Tag { .. } if token.is_end_tag() => {
+                    // Initialize node to be the current node (the bottommost node of the stack).
+                    for node in self.stack_of_open_elements.elements.clone().iter().rev() {
+                        // 2. Loop: If node is an HTML element with the same tag name as the token,
+                        // then:
+                        let token_tag_name = match token {
+                            Token::Tag { tag_name, .. } => tag_name,
+                            _ => panic!("Expected tag token"),
+                        };
+
+                        if self
+                            .arena
+                            .get_node(*node)
+                            .is_element_with_tag_name(&token_tag_name)
+                        {
+                            // 2.1. Generate implied end tags, except for HTML elements with the
+                            // same tag name as the token.
+                            self.generate_implied_end_tags_except_for(Some(&token_tag_name));
+
+                            // 2.2. If node is not the current node, then this is a parse error.
+                            if *node != self.stack_of_open_elements.current_node() {
+                                self.error("Unexpected tag");
+                            }
+
+                            // 2.3. Pop all the nodes from the current node up to node, including
+                            // node,
+                            self.stack_of_open_elements
+                                .pop_elements_until_element_has_been_popped(*node);
+
+                            // then stop these steps.
+                            break;
+                        } else {
+                            // 3. Otherwise, if node is in the special category,
+                            if self
+                                .arena
+                                .get_node(*node)
+                                .is_element_with_one_of_tag_names(SPECIAL_TAGS)
+                            {
+                                // then this is a parse error; ignore the token,
+                                self.error("Unexpected tag");
+                                // and return.
+                                return;
+                            }
+
+                            // 4. Set node to the previous entry in the stack of
+                            //    open elements.
+                            // 5. Return to the step labeled loop.
+                        }
+                    }
+                }
                 _ => unreachable!(),
             },
             InsertionMode::Text => {
@@ -1586,6 +1735,14 @@ impl StackOfOpenElements {
                 .get_node(node)
                 .is_element_with_one_of_tag_names(tag_names)
             {
+                break;
+            }
+        }
+    }
+
+    pub fn pop_elements_until_element_has_been_popped(&mut self, element: NodeId) {
+        while let Some(node) = self.elements.pop() {
+            if node == element {
                 break;
             }
         }
