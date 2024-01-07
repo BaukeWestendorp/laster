@@ -633,7 +633,29 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 Token::Tag { .. }
                     if token.is_end_tag_with_name(&["h1", "h2", "h3", "h4", "h5", "h6"]) =>
                 {
-                    todo!()
+                    // TODO: If the stack of open elements does not have an
+                    // element in scope that is an HTML
+                    // element and whose tag name is one
+                    // of "h1", "h2", "h3", "h4", "h5", or "h6", then this is a
+                    // parse error; ignore the token.
+
+                    // Otherwise, run these steps:
+
+                    // Generate implied end tags.
+                    self.generate_implied_end_tags_except_for(None);
+
+                    // TODO: If the current node is not an HTML element with the same
+                    // tag name as that of the token, then this is a parse
+                    // error.
+
+                    // Pop elements from the stack of open elements until an
+                    // HTML element whose tag name is one of "h1", "h2", "h3",
+                    // "h4", "h5", or "h6" has been popped from the stack.
+                    self.stack_of_open_elements
+                        .pop_until_element_with_one_of_tag_names(
+                            &self.arena,
+                            &["h1", "h2", "h3", "h4", "h5", "h6"],
+                        );
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["a"]) => {
                     // TODO: If the list of active formatting elements contains
@@ -1287,7 +1309,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
     /// https://html.spec.whatwg.org/multipage/parsing.html#close-a-p-element
     fn close_p_element(&mut self) {
         // Generate implied end tags, except for p elements.
-        self.generate_implied_end_tags_except_for("p");
+        self.generate_implied_end_tags_except_for(Some("p"));
 
         // If the current node is not a p element, then this is a parse error.
         if !self
@@ -1305,7 +1327,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
     }
 
     /// https://html.spec.whatwg.org/multipage/parsing.html#generate-implied-end-tags
-    fn generate_implied_end_tags_except_for(&mut self, except: &str) {
+    fn generate_implied_end_tags_except_for(&mut self, except: Option<&str>) {
         // while the current node is a dd element, a dt element, an li element, an
         // optgroup element, an option element, a p element, an rb element, an rp
         // element, an rt element, or an rtc element, the UA must pop the current node
@@ -1315,8 +1337,10 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 .arena
                 .get_node(self.stack_of_open_elements.current_node());
 
-            if node.is_element_with_tag_name(except) {
-                return;
+            if let Some(except) = except {
+                if node.is_element_with_tag_name(except) {
+                    return;
+                }
             }
 
             if !node.is_element_with_one_of_tag_names(&[
@@ -1549,8 +1573,19 @@ impl StackOfOpenElements {
     }
 
     pub fn pop_until_element_with_tag_name(&mut self, arena: &NodeArena, tag_name: &str) {
+        self.pop_until_element_with_one_of_tag_names(arena, &[tag_name])
+    }
+
+    pub fn pop_until_element_with_one_of_tag_names(
+        &mut self,
+        arena: &NodeArena,
+        tag_names: &[&str],
+    ) {
         while let Some(node) = self.elements.pop() {
-            if arena.get_node(node).is_element_with_tag_name(tag_name) {
+            if arena
+                .get_node(node)
+                .is_element_with_one_of_tag_names(tag_names)
+            {
                 break;
             }
         }
