@@ -136,6 +136,11 @@ impl Token {
     pub fn is_end_tag(&self) -> bool {
         !self.is_start_tag()
     }
+
+    pub fn acknowledge_self_closing_flag(&self) {
+        // TODO: Add a flag to the current tag token to note that it is
+        // self-closing.
+    }
 }
 
 macro_rules! null {

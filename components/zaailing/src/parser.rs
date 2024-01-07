@@ -304,9 +304,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     // Immediately pop the current node off the stack of open elements.
                     self.stack_of_open_elements.pop();
 
-                    // TODO: Acknowledge the token's self-closing flag, if it is set.
-
-                    todo!();
+                    // Acknowledge the token's self-closing flag, if it is set.
+                    token.acknowledge_self_closing_flag();
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["meta"]) => {
                     // Insert an HTML element for the token. Immediately pop the
@@ -314,8 +313,9 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     self.insert_html_element(token);
                     self.stack_of_open_elements.pop();
 
-                    // TODO: Acknowledge the token's self-closing flag, if it is
+                    // Acknowledge the token's self-closing flag, if it is
                     // set.
+                    token.acknowledge_self_closing_flag();
 
                     // TODO: If the active speculative HTML parser is null,
                     // then:
@@ -334,8 +334,9 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     todo!();
                 }
                 Token::Tag { .. } if token.is_end_tag_with_name(&["head"]) => {
-                    // TODO: Pop the current node (which will be the head element) off the stack of
+                    // Pop the current node (which will be the head element) off the stack of
                     // open elements.
+                    self.stack_of_open_elements.pop();
 
                     self.switch_insertion_mode(InsertionMode::AfterHead);
                 }
