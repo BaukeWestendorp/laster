@@ -424,9 +424,78 @@ impl<'input> Tokenizer<'input> {
                         self.reconsume_in_state(State::RcData);
                     }
                 },
-                State::RawTextLessThanSign => todo!("RawTextLessThanSign"),
-                State::RawTextEndTagOpen => todo!("RawTextEndTagOpen"),
-                State::RawTextEndTagName => todo!("RawTextEndTagName"),
+                State::RawTextLessThanSign => match self.consume_next_input_character() {
+                    Some('/') => {
+                        self.temporary_buffer = String::new();
+                        self.switch_to(State::RawTextEndTagOpen);
+                    }
+                    _ => {
+                        emit_token!(Token::Character('<'));
+                        self.reconsume_in_state(State::RawText);
+                    }
+                },
+                State::RawTextEndTagOpen => match self.consume_next_input_character() {
+                    ascii_alpha!() => {
+                        self.set_current_token(Token::Tag {
+                            start: false,
+                            tag_name: "".to_string(),
+                            attributes: vec![],
+                            self_closing: false,
+                        });
+                        self.reconsume_in_state(State::RawTextEndTagName);
+                    }
+                    _ => {
+                        emit_token!(Token::Character('<'));
+                        emit_token!(Token::Character('/'));
+                        self.reconsume_in_state(State::RawText);
+                    }
+                },
+                State::RawTextEndTagName => match self.consume_next_input_character() {
+                    whitespace!() => {
+                        if self.current_end_tag_token_is_appropriate() {
+                            self.switch_to(State::BeforeAttributeName);
+                        } else {
+                            todo!("Otherwise, treat it as per the 'anything else' entry below.");
+                        }
+                    }
+                    Some('/') => {
+                        if self.current_end_tag_token_is_appropriate() {
+                            self.switch_to(State::SelfClosingStartTag);
+                        } else {
+                            todo!("Otherwise, treat it as per the 'anything else' entry below.");
+                        }
+                    }
+                    Some('>') => {
+                        if self.current_end_tag_token_is_appropriate() {
+                            self.switch_to(State::Data);
+                            emit_current_token!();
+                        } else {
+                            todo!("Otherwise, treat it as per the 'anything else' entry below.");
+                        }
+                    }
+                    ascii_upper_alpha!() => {
+                        let char = self.current_input_character().unwrap();
+                        if let Some(Token::Tag { tag_name, .. }) = &mut self.current_token {
+                            tag_name.push(char.to_ascii_lowercase());
+                        }
+                        self.temporary_buffer.push(char);
+                    }
+                    ascii_lower_alpha!() => {
+                        let char = self.current_input_character().unwrap();
+                        if let Some(Token::Tag { tag_name, .. }) = &mut self.current_token {
+                            tag_name.push(char);
+                        }
+                        self.temporary_buffer.push(char);
+                    }
+                    _ => {
+                        emit_token!(Token::Character('<'));
+                        emit_token!(Token::Character('/'));
+                        for char in self.temporary_buffer.chars() {
+                            emit_token!(Token::Character(char));
+                        }
+                        self.reconsume_in_state(State::RawText);
+                    }
+                },
                 State::ScriptDataLessThanSign => todo!("ScriptDataLessThanSign"),
                 State::ScriptDataEndTagOpen => todo!("ScriptDataEndTagOpen"),
                 State::ScriptDataEndTagName => todo!("ScriptDataEndTagName"),

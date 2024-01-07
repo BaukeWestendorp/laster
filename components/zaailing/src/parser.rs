@@ -328,7 +328,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                     if (token.is_start_tag_with_name(&["noscript"]) && self.scripting)
                         || token.is_start_tag_with_name(&["noframes", "style"]) =>
                 {
-                    todo!("Follow the generic raw text element parsing algorithm.");
+                    // Follow the generic raw text element parsing algorithm.
+                    self.follow_generic_parsing_algorithm(token, ParsingAlgorithm::RawText);
                 }
                 Token::Tag { .. } if token.is_start_tag_with_name(&["script"]) => {
                     todo!();
