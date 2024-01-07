@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-  "browser",
-  "dom",
+  "laster",
+  "zaailing",
 ]
 
 [workspace.package]
