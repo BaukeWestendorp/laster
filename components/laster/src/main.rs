@@ -5,11 +5,11 @@ use nannou::prelude::*;
 use std::io::Read;
 use std::rc::Rc;
 
-use dom::arena::NodeArena;
-use dom::node::{Node, NodeKind};
 use stammer::elements::builder::ElementBuilder;
 use stammer::elements::{Element, SizingStrategy};
 use stammer::Panel;
+use zaailing::arena::NodeArena;
+use zaailing::node::{Node, NodeKind};
 
 fn dom_node_as_stammer_element(
     font: Rc<stammer::Font>,
@@ -49,7 +49,7 @@ fn get_document(arena: &mut NodeArena) -> Node {
     let mut html = String::new();
     std::io::stdin().read_to_string(&mut html).unwrap();
 
-    let document = dom::Dom::parse(html.as_str(), arena);
+    let document = zaailing::Dom::parse(html.as_str(), arena);
 
     document.dump(&arena);
 
@@ -76,7 +76,7 @@ struct Model {
 }
 
 fn model(app: &App) -> Model {
-    let mut arena = dom::arena::NodeArena::new();
+    let mut arena = zaailing::arena::NodeArena::new();
     let document = get_document(&mut arena);
     let body = get_body(&mut arena, &document);
 
