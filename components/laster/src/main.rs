@@ -57,9 +57,9 @@ fn get_document(arena: &mut NodeArena) -> Node {
 }
 
 fn get_body(arena: &mut NodeArena, document: &Node) -> Node {
+    // FIXME: This is VERY ad-hoc.
     let html = document.children()[1];
-    let head = arena.get_node(html).children()[0];
-    let body = arena.get_node(head).children()[7];
+    let body = arena.get_node(html).children()[2];
     let body = arena.get_node(body).clone();
     body
 }
