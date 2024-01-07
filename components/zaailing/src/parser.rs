@@ -635,7 +635,28 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 {
                     todo!()
                 }
-                Token::Tag { .. } if token.is_start_tag_with_name(&["a"]) => todo!(),
+                Token::Tag { .. } if token.is_start_tag_with_name(&["a"]) => {
+                    // TODO: If the list of active formatting elements contains
+                    // an a element between the end of the
+                    // list and the last marker on the list
+                    // (or the start of the list if there is no
+                    // marker on the list), then this is a parse error; run the
+                    // adoption agency algorithm for the token, then remove that
+                    // element from the list of active formatting elements and
+                    // the stack of open elements if the adoption agency
+                    // algorithm didn't already remove it (it might not have if
+                    // the element is not in table scope).
+
+                    // Reconstruct the active formatting elements, if any.
+                    self.active_formatting_elements
+                        .reconstruct(&self.stack_of_open_elements);
+
+                    // Insert an HTML element for the token. Push onto the list
+                    // of active formatting elements that element.
+                    let element = self.insert_html_element(token);
+                    self.active_formatting_elements
+                        .push(ActiveFormattingElement::Element(element));
+                }
                 Token::Tag { .. }
                     if token.is_start_tag_with_name(&[
                         "b", "big", "code", "em", "font", "i", "s", "small", "strike", "strong",
@@ -1250,7 +1271,7 @@ impl StackOfOpenElements {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum FormattingElement {
+enum ActiveFormattingElement {
     Marker,
     Element(NodeId),
 }
@@ -1258,7 +1279,7 @@ enum FormattingElement {
 /// https://html.spec.whatwg.org/multipage/parsing.html#list-of-active-formatting-elements
 #[derive(Debug, Clone, PartialEq)]
 struct ActiveFormattingElements {
-    elements: Vec<FormattingElement>,
+    elements: Vec<ActiveFormattingElement>,
 }
 
 impl ActiveFormattingElements {
@@ -1279,8 +1300,8 @@ impl ActiveFormattingElements {
         // the stack of open elements, then there is nothing to reconstruct;
         // stop this algorithm.
         match self.elements.last().unwrap() {
-            FormattingElement::Marker => return,
-            FormattingElement::Element(element) if open_elements.contains(*element) => {
+            ActiveFormattingElement::Marker => return,
+            ActiveFormattingElement::Element(element) if open_elements.contains(*element) => {
                 return;
             }
             _ => {}
@@ -1313,5 +1334,9 @@ impl ActiveFormattingElements {
         // TODO: If the entry for new element in the list of active formatting
         // elements is not the last entry in the list, return to the step
         // labeled advance.
+    }
+
+    pub fn push(&mut self, element: ActiveFormattingElement) {
+        self.elements.push(element);
     }
 }
